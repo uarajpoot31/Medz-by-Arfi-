@@ -278,6 +278,27 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun checkAndPerformGoogleLogin(email: String, onUnregistered: () -> Unit) {
+        viewModelScope.launch {
+            val profile = repository.getProfileByEmail(email)
+            if (profile != null) {
+                _currentUserEmail.value = email
+                isLoggedIn = true
+                isAdminLoggedIn = false
+                selectedTab = "dashboard"
+            } else {
+                onUnregistered()
+            }
+        }
+    }
+
+    fun checkEmailExists(email: String, onResult: (UserProfile?) -> Unit) {
+        viewModelScope.launch {
+            val profile = repository.getProfileByEmail(email)
+            onResult(profile)
+        }
+    }
+
     // --- DYNAMIC PREFERENCES MUTATORS ---
     fun updateSystemPreferences(appName: String, icon: String, pColor: String) {
         viewModelScope.launch {
@@ -304,6 +325,15 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
             val current = appPreferences.value ?: AppPreferences()
             repository.updateAppPreferences(current.copy(
                 customLogoUri = null
+            ))
+        }
+    }
+
+    fun updateCustomGeminiApiKey(key: String) {
+        viewModelScope.launch {
+            val current = appPreferences.value ?: AppPreferences()
+            repository.updateAppPreferences(current.copy(
+                customGeminiApiKey = if (key.isBlank()) null else key
             ))
         }
     }
@@ -505,6 +535,146 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
             // Clear input fields
             importSourceText = ""
             importSourceUrl = ""
+        }
+    }
+
+    // --- GEMINI DYNAMIC STUDY BANK GENERATOR ---
+    var aiBankLoading by mutableStateOf(false)
+    var aiBankStatusMessage by mutableStateOf<String?>(null)
+
+    fun generateQuestionsWithGemini(
+        book: String,
+        chapter: String,
+        questionType: String, // "MCQ" or "SEQ"
+        count: Int
+    ) {
+        aiBankLoading = true
+        aiBankStatusMessage = "Synthesizing clinical curriculum indices..."
+        
+        viewModelScope.launch {
+            try {
+                aiBankStatusMessage = "Formulating custom $questionType board scenarios with Gemini..."
+                
+                val systemPrompt = if (questionType == "MCQ") {
+                    """
+                    You are Dr. Arfi's Senior AI Clinical Medical Professor.
+                    Generate EXACTLY $count multiple-choice questions (MCQs) for senior medical board exams based on:
+                    Book: $book
+                    Chapter: $chapter
+                    
+                    Return ONLY a JSON Array containing objects with these exact keys:
+                    [
+                      {
+                        "question": "Clinical scenario query (MBBS/USMLE Style)...",
+                        "optionA": "Detailed option A",
+                        "optionB": "Detailed option B",
+                        "optionC": "Detailed option C",
+                        "optionD": "Detailed option D",
+                        "correctAnswer": "A", // must be A, B, C, or D
+                        "explanation": "High-yield textbook rationale citing Snell/Ross Physiology",
+                        "referenceTopic": "Anatomical structures or physiological system",
+                        "difficultyLevel": "Medium" // Easy, Medium, Hard
+                      }
+                    ]
+                    Do NOT wrap inside markdown block. Pure JSON only. No comments or backticks.
+                    """.trimIndent()
+                } else {
+                    """
+                    You are Dr. Arfi's Senior AI Clinical Medical Professor.
+                    Generate EXACTLY $count Structured/Short Essay Questions (SEQs) for senior medical board exams based on:
+                    Book: $book
+                    Chapter: $chapter
+                    
+                    Return ONLY a JSON Array containing objects with these exact keys:
+                    [
+                      {
+                        "question": "Anatomical or physiological essay question base asking about clinical significance...",
+                        "baseAnswer": "High-yield answer outline bullets explaining clinical relevance.",
+                        "referenceTopic": "Topic Name / Specific Structure"
+                      }
+                    ]
+                    Do NOT wrap inside markdown block. Pure JSON only. No comments or backticks.
+                    """.trimIndent()
+                }
+
+                val prompt = "Generate a fresh list of $count high-yield $questionType questions mapped to $book / $chapter."
+                val rawResponse = repository.askGemini(prompt, systemPrompt)
+                
+                aiBankStatusMessage = "Parsing clinical scenarios..."
+                
+                val cleanJsonString = rawResponse.substringAfter("[").substringBeforeLast("]").let { "[$it]" }
+                
+                if (cleanJsonString.contains("{")) {
+                    if (questionType == "MCQ") {
+                        val jsonArray = org.json.JSONArray(cleanJsonString)
+                        val generatedList = mutableListOf<MedicalMCQ>()
+                        
+                        for (i in 0 until jsonArray.length()) {
+                            val obj = jsonArray.getJSONObject(i)
+                            val cMcq = CustomMCQ(
+                                question = obj.optString("question", "Anatomy cardiac question index"),
+                                optionA = obj.optString("optionA", "A Option"),
+                                optionB = obj.optString("optionB", "B Option"),
+                                optionC = obj.optString("optionC", "C Option"),
+                                optionD = obj.optString("optionD", "D Option"),
+                                correctAnswer = obj.optString("correctAnswer", "A"),
+                                explanation = obj.optString("explanation", "Standard clinical guidelines apply."),
+                                referenceTopic = obj.optString("referenceTopic", chapter),
+                                difficultyLevel = obj.optString("difficultyLevel", "Medium"),
+                                bookSource = book,
+                                chapterName = chapter
+                            )
+                            repository.addCustomMCQ(cMcq)
+                            
+                            generatedList.add(
+                                MedicalMCQ(
+                                    id = "cus_temp_${System.currentTimeMillis()}+$i",
+                                    question = cMcq.question,
+                                    optionA = cMcq.optionA,
+                                    optionB = cMcq.optionB,
+                                    optionC = cMcq.optionC,
+                                    optionD = cMcq.optionD,
+                                    correctAnswer = cMcq.correctAnswer,
+                                    explanation = cMcq.explanation,
+                                    referenceTopic = cMcq.referenceTopic,
+                                    difficultyLevel = cMcq.difficultyLevel,
+                                    bookSource = cMcq.bookSource,
+                                    chapterName = cMcq.chapterName,
+                                    isCustom = true
+                                )
+                            )
+                        }
+                        
+                        aiBankStatusMessage = "Questions added to your local Study Bank!"
+                        kotlinx.coroutines.delay(600)
+                        
+                        if (generatedList.isNotEmpty()) {
+                            startQuiz(generatedList, "Gemini AI Bank Test", "$book / $chapter")
+                            selectedTab = "quiz"
+                        }
+                    } else {
+                        val jsonArray = org.json.JSONArray(cleanJsonString)
+                        for (i in 0 until jsonArray.length()) {
+                            val obj = jsonArray.getJSONObject(i)
+                            val cSeq = CustomSEQ(
+                                question = obj.optString("question", "Explain anatomical outline"),
+                                baseAnswer = obj.optString("baseAnswer", "Model bullet answers."),
+                                bookSource = book,
+                                chapterName = chapter,
+                                referenceTopic = obj.optString("referenceTopic", chapter)
+                            )
+                            repository.addCustomSEQ(cSeq)
+                        }
+                        aiBankStatusMessage = "Successfully generated $count dynamic SEQs. They are now added to your Books Library!"
+                    }
+                } else {
+                    aiBankStatusMessage = "Failed: Clean medical data format mismatch. Please click retry."
+                }
+            } catch (e: Exception) {
+                aiBankStatusMessage = "Failed: ${e.message ?: "Network handshake timeout. Confirm API Key."}"
+            } finally {
+                aiBankLoading = false
+            }
         }
     }
 

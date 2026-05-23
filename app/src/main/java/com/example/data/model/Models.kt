@@ -36,7 +36,8 @@ data class AppPreferences(
     val appName: String = "Medz with Arfi",
     val logoIconName: String = "MedicalServices", // MedicalServices, LocalHospital, Favorite, Medication, Healing
     val logoBgColorHex: String = "#8E1439", // Hex code
-    val customLogoUri: String? = null
+    val customLogoUri: String? = null,
+    val customGeminiApiKey: String? = null
 ) : Serializable
 
 @Entity(tableName = "custom_uploaded_files")

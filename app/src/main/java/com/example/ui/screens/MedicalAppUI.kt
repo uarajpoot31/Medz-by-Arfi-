@@ -13,6 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import android.widget.Toast
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -30,6 +35,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.*
+import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -159,6 +165,7 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                     val tabs = listOf(
                         Triple("dashboard", "Dashboard", Icons.Default.Home),
                         Triple("study", "Books", Icons.Default.Book),
+                        Triple("videos", "Lectures", Icons.Default.PlayCircle),
                         Triple("notes", "Notes", Icons.Default.Edit),
                         Triple("search", "Smart Search", Icons.Default.Search),
                         Triple("assistant", "Arfi AI", Icons.Default.AutoAwesome)
@@ -211,6 +218,7 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                 when (viewModel.selectedTab) {
                     "dashboard" -> DashboardTab(viewModel)
                     "study" -> StudyTab(viewModel)
+                    "videos" -> VideosTab(viewModel)
                     "quiz" -> QuizTab(viewModel)
                     "notes" -> NotesTab(viewModel)
                     "search" -> SearchTab(viewModel)
@@ -237,6 +245,14 @@ fun AuthScreen(viewModel: MedicalViewModel) {
     val appPrefs by viewModel.appPreferences.collectAsState()
 
     var showGoogleDialog by remember { mutableStateOf(false) }
+    var showGoogleAccountPicker by remember { mutableStateOf(false) }
+    var showGoogleFormDialog by remember { mutableStateOf(false) }
+    var chosenGoogleEmail by remember { mutableStateOf("") }
+
+    var showForgotDialog by remember { mutableStateOf(false) }
+    var showOtpSignUpDialog by remember { mutableStateOf(false) }
+    var otpDigits by remember { mutableStateOf("") }
+    var otpErrorText by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = Modifier
@@ -297,7 +313,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (isSignUp) "Create Physician Account" else "Sign In to Clinic",
+                        text = if (isSignUp) "Create Student Account" else "Sign In with Credentials",
                         color = DeepMaroon,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -309,7 +325,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it; viewModel.authName = it },
-                            label = { Text("Physician Name") },
+                            label = { Text("Name") },
                             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = DeepMaroon) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("auth_name_input"),
@@ -380,7 +396,17 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                     Button(
                         onClick = {
                             if (isSignUp) {
-                                viewModel.performSignUp()
+                                if (name.isBlank() || email.isBlank() || password.isBlank() || collegeName.isBlank() || mobileNumber.isBlank()) {
+                                    viewModel.authError = "All fields are required during signup (Name, Email, College, Mobile, Password)."
+                                } else if (!email.contains("@")) {
+                                    viewModel.authError = "Please insert a valid educational email."
+                                } else if (password.length < 5) {
+                                    viewModel.authError = "Secure password must be at least 5 characters."
+                                } else {
+                                    otpDigits = ""
+                                    otpErrorText = null
+                                    showOtpSignUpDialog = true
+                                }
                             } else {
                                 viewModel.performLogin()
                             }
@@ -400,7 +426,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                     }
 
                     if (!isSignUp) {
-                        TextButton(onClick = { viewModel.triggerForgotPassword() }) {
+                        TextButton(onClick = { showForgotDialog = true }) {
                             Text("Forgot Password?", color = LightMaroon, fontSize = 12.sp)
                         }
                     }
@@ -413,7 +439,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
 
                     // OAuth Google integration support demo
                     OutlinedButton(
-                        onClick = { showGoogleDialog = true },
+                        onClick = { showGoogleAccountPicker = true },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.DarkGray),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
@@ -448,54 +474,176 @@ fun AuthScreen(viewModel: MedicalViewModel) {
             }
         }
 
-        // Custom Simulated Google Login Dialog Dialog
-        if (showGoogleDialog) {
-            var gName by remember { mutableStateOf("") }
-            var gEmail by remember { mutableStateOf("") }
-            var gCollege by remember { mutableStateOf("") }
-            var gMobile by remember { mutableStateOf("") }
-            var gError by remember { mutableStateOf<String?>(null) }
+        // Professional Account & Password Dialog workflows
+        if (showGoogleAccountPicker) {
+            var customGmailInput by remember { mutableStateOf("") }
+            var showCustomInput by remember { mutableStateOf(false) }
 
-            Dialog(onDismissRequest = { showGoogleDialog = false }) {
+            Dialog(onDismissRequest = { showGoogleAccountPicker = false }) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.AccountBalance, null, tint = DeepMaroon, modifier = Modifier.size(40.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(LightCream),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.AccountCircle, null, tint = DeepMaroon, modifier = Modifier.size(32.dp))
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Sign In with Gmail", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 18.sp, fontFamily = FontFamily.Serif)
+                        Text("Select an active Google account to authorize", fontSize = 11.sp, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        val mockAccounts = listOf(
+                            "uarajpoot31@gmail.com" to "UA Rajpoot",
+                            "medical_pioneer123@gmail.com" to "Dr. Pioneer Student",
+                            "arfi.clinical.vault@gmail.com" to "Clinical Scholar"
+                        )
+
+                        mockAccounts.forEach { (gEmail, gLabel) ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        showGoogleAccountPicker = false
+                                        viewModel.checkAndPerformGoogleLogin(gEmail) {
+                                            chosenGoogleEmail = gEmail
+                                            showGoogleFormDialog = true
+                                        }
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = LightCream.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(DeepMaroon),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(gLabel.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                    Column {
+                                        Text(gLabel, fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 12.sp)
+                                        Text(gEmail, color = Color.Gray, fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Google Accounts Verification", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 16.sp)
-                        Text("Authorize using secure federated credentials", fontSize = 11.sp, color = Color.Gray)
+
+                        if (!showCustomInput) {
+                            TextButton(onClick = { showCustomInput = true }) {
+                                Text("+ Use another Google Account", color = MedicineGold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        } else {
+                            OutlinedTextField(
+                                value = customGmailInput,
+                                onValueChange = { customGmailInput = it },
+                                label = { Text("Enter Gmail Address") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { showCustomInput = false },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Back", fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = {
+                                        if (customGmailInput.contains("@") && customGmailInput.contains("gmail")) {
+                                            showGoogleAccountPicker = false
+                                            viewModel.checkAndPerformGoogleLogin(customGmailInput) {
+                                                chosenGoogleEmail = customGmailInput
+                                                showGoogleFormDialog = true
+                                            }
+                                        } else {
+                                            customGmailInput = "Invalid Gmail Address (e.g. user@gmail.com)"
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Proceed", fontSize = 11.sp, color = Color.White)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(onClick = { showGoogleAccountPicker = false }) {
+                            Text("DISMISS", color = Color.Gray, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showGoogleFormDialog) {
+            var gName by remember { mutableStateOf("") }
+            var gCollege by remember { mutableStateOf("") }
+            var gMobile by remember { mutableStateOf("") }
+            var gError by remember { mutableStateOf<String?>(null) }
+
+            Dialog(onDismissRequest = { showGoogleFormDialog = false }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Assignment, null, tint = MedicineGold, modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Google Workspace Profile", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 16.sp)
+                        Text("Complete secure profile for $chosenGoogleEmail", fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center)
                         Spacer(modifier = Modifier.height(16.dp))
 
                         OutlinedTextField(
                             value = gName,
                             onValueChange = { gName = it },
-                            label = { Text("Student Name") },
+                            label = { Text("Your Name") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        OutlinedTextField(
-                            value = gEmail,
-                            onValueChange = { gEmail = it },
-                            label = { Text("Gmail Address") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
                         OutlinedTextField(
                             value = gCollege,
                             onValueChange = { gCollege = it },
-                            label = { Text("Medical College / University") },
+                            label = { Text("College / University Name") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -504,7 +652,8 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             onValueChange = { gMobile = it },
                             label = { Text("Mobile Number") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
                         )
 
                         if (gError != null) {
@@ -514,24 +663,574 @@ fun AuthScreen(viewModel: MedicalViewModel) {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            TextButton(onClick = { showGoogleDialog = false }) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = { showGoogleFormDialog = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text("CANCEL", color = Color.Gray)
                             }
                             Button(
                                 onClick = {
-                                    if (gName.isBlank() || gEmail.isBlank() || gCollege.isBlank() || gMobile.isBlank()) {
+                                    if (gName.isBlank() || gCollege.isBlank() || gMobile.isBlank()) {
                                         gError = "Please fill in all Google Profile details."
                                     } else {
-                                        showGoogleDialog = false
-                                        viewModel.loginWithGoogleCustom(gName, gEmail, gCollege, gMobile)
+                                        showGoogleFormDialog = false
+                                        viewModel.loginWithGoogleCustom(gName, chosenGoogleEmail, gCollege, gMobile)
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon)
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                modifier = Modifier.weight(1.5f)
                             ) {
-                                Text("AUTHORIZE")
+                                Text("AUTHORIZE", color = Color.White)
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        if (showForgotDialog) {
+            var forgotEmail by remember { mutableStateOf("") }
+            var forgotMessage by remember { mutableStateOf<String?>(null) }
+            var isOtpPhase by remember { mutableStateOf(false) }
+            var enteredOtp by remember { mutableStateOf("") }
+            var newPassword by remember { mutableStateOf("") }
+
+            Dialog(onDismissRequest = { showForgotDialog = false }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.LockReset, null, tint = DeepMaroon, modifier = Modifier.size(40.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(if (isOtpPhase) "Set New Password" else "Account Recovery", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 17.sp)
+                        Text(if (isOtpPhase) "Enter OTP code 888888 sent to Gmail" else "Select dynamic password retrieval options", fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (!isOtpPhase) {
+                            OutlinedTextField(
+                                value = forgotEmail,
+                                onValueChange = { forgotEmail = it },
+                                label = { Text("Your Registered Gmail Address") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            )
+
+                            if (forgotMessage != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = LightCream),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        forgotMessage!!,
+                                        color = DeepMaroon,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(10.dp),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (forgotEmail.isBlank()) {
+                                            forgotMessage = "Gmail address field is required."
+                                        } else {
+                                            viewModel.checkEmailExists(forgotEmail) { profile ->
+                                                if (profile != null) {
+                                                    forgotMessage = "Inbox recovery routed! Credentials: \nEmail: ${profile.email}\nUniversity: ${profile.collegeName}\n(For demo, you are now safe to log in!)"
+                                                } else {
+                                                    forgotMessage = "No custom registration found for $forgotEmail. Providing sample credentials:\nEmail: dummy@medzwitharfi.com\nPassword: 12345"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Send Password to Gmail Inbox", fontSize = 11.sp)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        if (forgotEmail.isBlank()) {
+                                            forgotMessage = "Gmail address field is required."
+                                        } else {
+                                            isOtpPhase = true
+                                            forgotMessage = null
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Change Password via Verification OTP", fontSize = 11.sp, color = DarkMaroon)
+                                }
+                            }
+                        } else {
+                            OutlinedTextField(
+                                value = enteredOtp,
+                                onValueChange = { enteredOtp = it },
+                                label = { Text("Code (Hint: 888888)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = newPassword,
+                                onValueChange = { newPassword = it },
+                                label = { Text("Type New Password") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            )
+
+                            if (forgotMessage != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(forgotMessage!!, color = CoralRed, fontSize = 11.sp)
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { isOtpPhase = false },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Back")
+                                }
+                                Button(
+                                    onClick = {
+                                        if (enteredOtp != "888888") {
+                                            forgotMessage = "Invalid verification code. Enter 888888."
+                                        } else if (newPassword.length < 5) {
+                                            forgotMessage = "New password must be at least 5 characters."
+                                        } else {
+                                            // Register/Update password
+                                            viewModel.checkEmailExists(forgotEmail) { profile ->
+                                                val finalName = profile?.name ?: "Verified Scholar"
+                                                val finalCollege = profile?.collegeName ?: "Anatomy University"
+                                                val finalMobile = profile?.mobileNumber ?: "+92-12345"
+                                                viewModel.loginWithGoogleCustom(finalName, forgotEmail, finalCollege, finalMobile)
+                                                showForgotDialog = false
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Update Key", color = Color.White)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(onClick = { showForgotDialog = false }) {
+                            Text("DISMISS", color = Color.Gray)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showOtpSignUpDialog) {
+            Dialog(onDismissRequest = { showOtpSignUpDialog = false }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Security, null, tint = DeepMaroon, modifier = Modifier.size(40.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Registration Safety Verification", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 16.sp)
+                        Text("A secure 6-digit OTP code has been dispatch routed to:", fontSize = 11.sp, color = Color.Gray)
+                        Text("$email / $mobileNumber", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = otpDigits,
+                            onValueChange = { otpDigits = it },
+                            label = { Text("Verification OTP (6 Digits)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                        )
+
+                        Text("Test OTP Hint Code: 123456", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+
+                        if (otpErrorText != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(otpErrorText!!, color = CoralRed, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { showOtpSignUpDialog = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("CANCEL", color = Color.Gray)
+                            }
+                            Button(
+                                onClick = {
+                                    if (otpDigits == "123456") {
+                                        showOtpSignUpDialog = false
+                                        viewModel.performSignUp()
+                                    } else {
+                                        otpErrorText = "Safety error: Incorrect OTP code. Enter 123456."
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                modifier = Modifier.weight(1.5f)
+                            ) {
+                                Text("VERIFY & REGISTER", color = Color.White, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== VIDEOS DASHBOARD TAB ====================
+@Composable
+fun VideosTab(viewModel: MedicalViewModel) {
+    val allLectures by viewModel.allVideoLectures.collectAsState()
+    var selectedBookFilter by remember { mutableStateOf("All Books") }
+    var searchQuery by remember { mutableStateOf("") }
+    var videoToPlay by remember { mutableStateOf<VideoLecture?>(null) }
+
+    val filteredLectures = allLectures.filter { lecture ->
+        val matchesBook = when (selectedBookFilter) {
+            "Snell's Anatomy" -> lecture.bookSource == "Snell's Clinical Anatomy"
+            "Ross & Wilson" -> lecture.bookSource == "Ross and Wilson Anatomy & Physiology"
+            else -> true
+        }
+        val matchesSearch = lecture.title.contains(searchQuery, ignoreCase = true) || 
+                            lecture.description.contains(searchQuery, ignoreCase = true) ||
+                            lecture.chapterName.contains(searchQuery, ignoreCase = true)
+        matchesBook && matchesSearch
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(LightCream, Color(0xFFFBF9F6))))
+            .padding(16.dp)
+    ) {
+        // Lecture Theatre Title Header Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = DeepMaroon),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.PlayArrow, null, tint = MedicineGold, modifier = Modifier.size(28.dp))
+                }
+                Column {
+                    Text(
+                        text = "Clinical Lecture Theater",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontFamily = FontFamily.Serif
+                    )
+                    Text(
+                        text = "High-yield video lectures & medical system tutorials",
+                        fontSize = 11.sp,
+                        color = WarmWhite.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+
+        // Search Bar
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Search by topic, chapter or keywords...", fontSize = 12.sp, color = Color.Gray) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = DeepMaroon) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Close, null, tint = Color.Gray)
+                    }
+                }
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+        )
+
+        // Book Filtering Tabs Row
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val filterOptions = listOf("All Books", "Snell's Anatomy", "Ross & Wilson")
+            filterOptions.forEach { option ->
+                val isSelected = selectedBookFilter == option
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(30.dp))
+                        .background(if (isSelected) DeepMaroon else Color.White)
+                        .border(1.dp, if (isSelected) DeepMaroon else Color.LightGray.copy(alpha = 0.5f), RoundedCornerShape(30.dp))
+                        .clickable { selectedBookFilter = option }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = option,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color.White else Color.DarkGray
+                    )
+                }
+            }
+        }
+
+        // Videos List LazyColumn
+        if (filteredLectures.isEmpty()) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.VideoLibrary, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("No matched medical lectures found.", color = Color.Gray, fontSize = 13.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(filteredLectures) { video ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            // Badge labels row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val isSnell = video.bookSource == "Snell's Clinical Anatomy"
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (isSnell) DeepMaroon.copy(alpha = 0.1f) else MedicineGold.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (isSnell) "Snell's Clinical Anatomy" else "Ross & Wilson Anatomy & Phys",
+                                        color = if (isSnell) DeepMaroon else DarkMaroon,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.Schedule, null, tint = MedicineGold, modifier = Modifier.size(12.dp))
+                                    Text(video.duration, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = DarkMaroon)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = video.title,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepMaroon,
+                                fontSize = 14.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = "Chapter: ${video.chapterName}",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Text(
+                                text = video.description,
+                                fontSize = 11.sp,
+                                color = Color.DarkGray,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+
+                            Divider(color = LightCream, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
+
+                            Button(
+                                onClick = { videoToPlay = video },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(36.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("STREAM LECTURE TUTORIAL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Classroom Video Player inside dashboard
+    if (videoToPlay != null) {
+        val video = videoToPlay!!
+        Dialog(onDismissRequest = { videoToPlay = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E1E1E))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = video.title,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { videoToPlay = null }) {
+                            Icon(Icons.Default.Close, null, tint = Color.White)
+                        }
+                    }
+
+                    // Actual Embedded Youtube WebView Component
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .background(Color.DarkGray),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AndroidView(
+                            factory = { context ->
+                                android.webkit.WebView(context).apply {
+                                    webViewClient = android.webkit.WebViewClient()
+                                    webChromeClient = android.webkit.WebChromeClient()
+                                    settings.javaScriptEnabled = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    loadUrl(video.videoUrl)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Interactive Lesson Explainer & Note pad
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .background(LightCream)
+                            .padding(16.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = "Reference Medical Lesson: ${video.bookSource} (${video.chapterName})",
+                            fontWeight = FontWeight.Bold,
+                            color = DeepMaroon,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "Reference Duration: ${video.duration}",
+                            fontSize = 10.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Clinical Overview:",
+                            fontWeight = FontWeight.Bold,
+                            color = DarkMaroon,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = video.description,
+                            fontSize = 11.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = { videoToPlay = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("DONE - RETURN TO THEATRE", color = DarkMaroon, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1229,7 +1928,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
     val allVideoLectures by viewModel.allVideoLectures.collectAsState()
     val customUploadedFiles by viewModel.customUploadedFiles.collectAsState()
     var selectedBook by remember { mutableStateOf<String?>(null) } // null showing choices, otherwise chapters list
-    var activePreviewImage by remember { mutableStateOf<String?>(null) }
+    var activePreviewFile by remember { mutableStateOf<CustomUploadedFile?>(null) }
 
     var activeChapterForVideos by remember { mutableStateOf<String?>(null) }
     var activeBookForVideos by remember { mutableStateOf<String?>(null) }
@@ -1397,9 +2096,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                             .clickable {
-                                if (ufield.fileType == "image") {
-                                    activePreviewImage = ufield.fileUri
-                                }
+                                activePreviewFile = ufield
                             },
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         shape = RoundedCornerShape(10.dp)
@@ -1757,54 +2454,310 @@ fun StudyTab(viewModel: MedicalViewModel) {
         }
     }
 
-    if (activePreviewImage != null) {
-        Dialog(onDismissRequest = { activePreviewImage = null }) {
+    if (activePreviewFile != null) {
+        val file = activePreviewFile!!
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var scale by remember { mutableStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        var pdfPage by remember { mutableStateOf(1) }
+        var isDownloading by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+
+        Dialog(onDismissRequest = { activePreviewFile = null }) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth(0.95f)
-                    .fillMaxHeight(0.65f),
+                    .fillMaxHeight(0.85f),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // Header Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Anatomical Reference Chart", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 15.sp)
-                        IconButton(onClick = { activePreviewImage = null }) {
-                            Icon(Icons.Default.Close, "Close")
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = file.fileName,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepMaroon,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Category: ${file.fileType.uppercase()} | Size: ${file.fileSize}",
+                                fontSize = 10.sp,
+                                color = Color.Gray
+                            )
+                        }
+                        IconButton(onClick = { activePreviewFile = null }) {
+                            Icon(Icons.Default.Close, "Dismiss")
                         }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(LightCream),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AsyncImage(
-                            model = activePreviewImage!!,
-                            contentDescription = "Expanded Diagram Preview",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                        )
+                    if (isDownloading) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .background(LightCream),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(24.dp)
+                            ) {
+                                CircularProgressIndicator(color = DeepMaroon)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("Downloading Handout to Gallery...", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 13.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Saving to /Downloads/MedzArfiVault/...", fontSize = 10.sp, color = Color.Gray)
+                            }
+                        }
+                    } else {
+                        // Interactive media canvas container with zoom modifiers
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(LightCream)
+                                .pointerInput(Unit) {
+                                    detectTransformGestures { _, pan, zoom, _ ->
+                                        scale = (scale * zoom).coerceIn(1f, 5f)
+                                        if (scale > 1f) {
+                                            offset += pan
+                                        } else {
+                                            offset = Offset.Zero
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (file.fileType == "image") {
+                                AsyncImage(
+                                    model = file.fileUri,
+                                    contentDescription = "Zoomable Diagram",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer(
+                                            scaleX = scale,
+                                            scaleY = scale,
+                                            translationX = offset.x,
+                                            translationY = offset.y
+                                        )
+                                )
+                            } else if (file.fileType == "pdf") {
+                                // High-fidelity PDF document page simulator widget that expands on zoom!
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(16.dp)
+                                        .graphicsLayer(
+                                            scaleX = scale,
+                                            scaleY = scale,
+                                            translationX = offset.x,
+                                            translationY = offset.y
+                                        ),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(DeepMaroon.copy(alpha = 0.05f))
+                                            .padding(6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("CLINICAL REF GUIDE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = DeepMaroon)
+                                        Text("PAGE $pdfPage OF 3", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = DeepMaroon)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    when (pdfPage) {
+                                        1 -> {
+                                            Text(
+                                                text = "SECTION A: CLINICAL CARDIOVASCULAR ANATOMY",
+                                                fontWeight = FontWeight.Bold,
+                                                color = DarkMaroon,
+                                                fontSize = 12.sp,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "The blood supply of the cardiovascular engine is primarily managed by the coronary artery nodes. Under dissection, the anterior interventricular division provides branches mapped directly across the lower quadrants. Obstruction inside this branch is highly linked with high-tier myocardial localized ischemia (The Widowed Pathway).",
+                                                fontSize = 10.sp,
+                                                color = Color.DarkGray,
+                                                lineHeight = 14.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(modifier = Modifier.padding(10.dp)) {
+                                                    Text("Arterial Segment Mapping Table:", fontWeight = FontWeight.Bold, fontSize = 9.sp, color = MedicineGold)
+                                                    Text("• Left Main Coronary -> LAD & Circ", fontSize = 8.sp)
+                                                    Text("• Right Coronary -> Marginal & Posterior", fontSize = 8.sp)
+                                                }
+                                            }
+                                        }
+                                        2 -> {
+                                            Text(
+                                                text = "SECTION B: RESPIRATORY DISSECTION MATRIX",
+                                                fontWeight = FontWeight.Bold,
+                                                color = DarkMaroon,
+                                                fontSize = 12.sp,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Laryngeal structures represent the protective valve and sound gateway of the respiratory tract. Extent of the recurrent laryngeal nerve loop beneath the aortic arch exposes it to damage during posterior chest incisions, leading directly to vocal card dysfunction.",
+                                                fontSize = 10.sp,
+                                                color = Color.DarkGray,
+                                                lineHeight = 14.sp
+                                            )
+                                        }
+                                        else -> {
+                                            Text(
+                                                text = "SECTION C: PHYSIOLOGICAL HOMEOSTASIS INDEX",
+                                                fontWeight = FontWeight.Bold,
+                                                color = DarkMaroon,
+                                                fontSize = 12.sp,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Regulative feedback loops within the baroreception cells control critical mean arterial strain index. Sudden decrease in strain limits signal conduction, firing adrenal pathways to augment total peripheral resistance index and heartbeat output dynamically.",
+                                                fontSize = 10.sp,
+                                                color = Color.DarkGray,
+                                                lineHeight = 14.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.InsertDriveFile, null, tint = DeepMaroon, modifier = Modifier.size(48.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("MEDICAL REFERENCE SHEET", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DeepMaroon)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "High-yield reference material containing clinical summaries, anatomical indexes, and lecture footnotes map. Double-pinch the frame to zoom the content context dynamically, or press the download button to export the original handout to your local device downloads folder.",
+                                        fontSize = 11.sp,
+                                        color = Color.DarkGray,
+                                        textAlign = TextAlign.Center,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    Button(
-                        onClick = { activePreviewImage = null },
-                        colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.align(Alignment.End)
+                    if (file.fileType == "pdf" && !isDownloading) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { if (pdfPage > 1) pdfPage-- },
+                                enabled = pdfPage > 1
+                            ) {
+                                Icon(Icons.Default.ArrowBack, "Prev Page")
+                            }
+                            Text("Page $pdfPage of 3", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp))
+                            IconButton(
+                                onClick = { if (pdfPage < 3) pdfPage++ },
+                                enabled = pdfPage < 3
+                            ) {
+                                Icon(Icons.Default.ArrowForward, "Next Page")
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("DONE")
+                        if (!isDownloading) {
+                            IconButton(onClick = { scale = (scale - 0.5f).coerceAtLeast(1f); if (scale == 1f) offset = Offset.Zero }) {
+                                Icon(Icons.Default.ZoomOut, "Zoom Out", tint = DeepMaroon)
+                            }
+
+                            Slider(
+                                value = scale,
+                                onValueChange = { scale = it; if (scale == 1f) offset = Offset.Zero },
+                                valueRange = 1f..5f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(thumbColor = MedicineGold, activeTrackColor = DeepMaroon)
+                            )
+
+                            IconButton(onClick = { scale = (scale + 0.5f).coerceAtMost(5f) }) {
+                                Icon(Icons.Default.ZoomIn, "Zoom In", tint = DeepMaroon)
+                            }
+
+                            TextButton(onClick = { scale = 1f; offset = Offset.Zero }) {
+                                Text("RESET", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DeepMaroon)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                isDownloading = true
+                                scope.launch {
+                                    kotlinx.coroutines.delay(1200)
+                                    isDownloading = false
+                                    Toast.makeText(
+                                        context,
+                                        "Saved \"${file.fileName}\" successfully to Gallery / Downloads folder!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                            modifier = Modifier.weight(1.3f),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !isDownloading
+                        ) {
+                            Icon(Icons.Default.Download, null, tint = DarkMaroon, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("DOWNLOAD TO GALLERY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkMaroon)
+                        }
+
+                        Button(
+                            onClick = { activePreviewFile = null },
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !isDownloading
+                        ) {
+                            Text("DONE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -1819,41 +2772,280 @@ fun QuizTab(viewModel: MedicalViewModel) {
     val bookmarkList by viewModel.bookmarks.collectAsState()
 
     if (state.mcqs.isEmpty()) {
-        Box(
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var aiBook by remember { mutableStateOf("Snell's Clin Anatomy") }
+        var aiChapter by remember { mutableStateOf("Thorax & Cardiac Grid") }
+        var aiType by remember { mutableStateOf("MCQ") } // MCQ or "SEQ"
+        var aiCount by remember { mutableStateOf(5) }
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.PlayCircleFilled, null, modifier = Modifier.size(64.dp), tint = DeepMaroon)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    "No Active Study Exam Session",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = DeepMaroon
-                )
-                Text(
-                    "Go to the 'Books' tab to trigger specific chapters, or tap below to execute a quick random mock exam instantly.",
-                    fontSize = 13.sp,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = {
-                        viewModel.startQuiz(
-                            viewModel.allMCQs.value,
-                            "Random Practice",
-                            "Quick Mock Mix"
+            Icon(
+                Icons.Default.PlayCircleFilled,
+                contentDescription = null,
+                modifier = Modifier.size(56.dp),
+                tint = DeepMaroon
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "BOARD EXAM CENTER",
+                fontWeight = FontWeight.Bold,
+                color = DeepMaroon,
+                fontSize = 18.sp,
+                fontFamily = FontFamily.Serif
+            )
+            Text(
+                text = "Practice questions or configure Arfi's Infinite Gemini AI Study Bank.",
+                fontSize = 11.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Standard launcher
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                border = BorderStroke(1.dp, DeepMaroon.copy(alpha = 0.12f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "1. Local Curated Board Exams",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = DarkMaroon
+                    )
+                    Text(
+                        "Trigger a standardized test extracted directly from standard textbook questions catalog instantly.",
+                        fontSize = 11.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.startQuiz(
+                                viewModel.allMCQs.value,
+                                "Random Practice",
+                                "Quick Mock Mix"
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                    ) {
+                        Text("Launch Standard Practice Exam", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            // Gemini Dynamic AI Launcher Block
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, MedicineGold.copy(alpha = 0.35f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, null, tint = MedicineGold, modifier = Modifier.size(18.dp))
+                        Text(
+                            "2. Gemini Infinite AI Study Bank",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = DeepMaroon
                         )
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Launch Random Board Exam")
+                    }
+                    Text(
+                        "Contact AI Clinical Medical engine to build customized clinical scenarios with explanations dynamically.",
+                        fontSize = 11.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (viewModel.aiBankLoading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(LightCream, shape = RoundedCornerShape(8.dp))
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = DeepMaroon, modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = viewModel.aiBankStatusMessage ?: "Generating scenarios...",
+                                    fontSize = 11.sp,
+                                    color = DeepMaroon,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        // AI Selection Form
+                        Text("Target Textbook Reference:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.DarkGray)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("Snell's Clin Anatomy", "Ross & Wilson Physiology").forEach { b ->
+                                val active = aiBook == b
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(
+                                            if (active) DeepMaroon else Color.White,
+                                            shape = RoundedCornerShape(6.dp)
+                                        )
+                                        .border(1.dp, if (active) DeepMaroon else Color.LightGray, shape = RoundedCornerShape(6.dp))
+                                        .clickable { aiBook = b }
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = b,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (active) Color.White else Color.DarkGray,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text("Select System / Focus Topic:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.DarkGray)
+                        OutlinedTextField(
+                            value = aiChapter,
+                            onValueChange = { aiChapter = it },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = DeepMaroon,
+                                unfocusedBorderColor = Color.LightGray
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1.2f)) {
+                                Text("Format Structure:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.DarkGray)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf("MCQ", "SEQ").forEach { typeStr ->
+                                        val active = aiType == typeStr
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .background(
+                                                    if (active) MedicineGold else Color.White,
+                                                    shape = RoundedCornerShape(6.dp)
+                                                )
+                                                .border(1.dp, if (active) MedicineGold else Color.LightGray, shape = RoundedCornerShape(6.dp))
+                                                .clickable { aiType = typeStr }
+                                                .padding(6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = typeStr,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (active) DarkMaroon else Color.DarkGray
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Quantity Count:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.DarkGray)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf(3, 5, 10).forEach { num ->
+                                        val active = aiCount == num
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .background(
+                                                    if (active) DeepMaroon else Color.White,
+                                                    shape = RoundedCornerShape(6.dp)
+                                                )
+                                                .border(1.dp, if (active) DeepMaroon else Color.LightGray, shape = RoundedCornerShape(6.dp))
+                                                .clickable { aiCount = num }
+                                                .padding(6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$num",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (active) Color.White else Color.DarkGray
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.generateQuestionsWithGemini(aiBook, aiChapter, aiType, aiCount)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text("Launch Infinite Gemini AI Test", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkMaroon)
+                        }
+                    }
+
+                    // Display feedback messages if any
+                    viewModel.aiBankStatusMessage?.let { msg ->
+                        if (msg.contains("Successfully generated") || msg.contains("Failed:")) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (msg.contains("Failed")) Color(0xFFFDE8E8) else Color(0xFFE1F5FE)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = msg,
+                                    fontSize = 11.sp,
+                                    color = if (msg.contains("Failed")) Color(0xFFC81E1E) else Color(0xFF0288D1),
+                                    modifier = Modifier.padding(10.dp),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

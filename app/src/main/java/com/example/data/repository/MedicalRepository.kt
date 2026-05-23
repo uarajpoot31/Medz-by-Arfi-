@@ -281,9 +281,14 @@ class MedicalRepository(private val context: Context) {
 
     // --- GEMINI API CALLER ---
     suspend fun askGemini(prompt: String, systemPrompt: String = "You are Arfi, an expert clinical anatomy and physiology professor."): String = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
+        val prefs = appPreferencesDao.getAppPreferences()
+        val apiKey = if (!prefs?.customGeminiApiKey.isNullOrBlank()) {
+            prefs?.customGeminiApiKey ?: ""
+        } else {
+            BuildConfig.GEMINI_API_KEY
+        }
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext "API Key is missing or placeholder. Please provide a real Gemini API Key in the AI Studio Secrets panel."
+            return@withContext "API Key is missing or placeholder. Please provide a real Gemini API Key inside the Admin Settings Panel or AI Studio Secrets panel."
         }
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
@@ -353,12 +358,17 @@ class MedicalRepository(private val context: Context) {
 
         // 3. Optional online AI assistance response for "Explain this concept"
         var aiExplanation = ""
-        val apiKey = BuildConfig.GEMINI_API_KEY
+        val prefs = appPreferencesDao.getAppPreferences()
+        val apiKey = if (!prefs?.customGeminiApiKey.isNullOrBlank()) {
+            prefs?.customGeminiApiKey ?: ""
+        } else {
+            BuildConfig.GEMINI_API_KEY
+        }
         if (apiKey.isNotEmpty() && apiKey != "MY_GEMINI_API_KEY") {
             val systemPrompt = "You are a senior MBBS anatomical lecturer. Provide a concise, highly clinical definition of this query, explaining the anatomy or physiology behind it, and connecting it to clinical pathologies in 3 bullets."
             aiExplanation = askGemini(query, systemPrompt)
         } else {
-            aiExplanation = "To enable professional AI-powered semantic summaries, configure your Gemini API Key in the Secrets panel."
+            aiExplanation = "To enable professional AI-powered semantic summaries, configure your Gemini API Key in the Admin Settings panel."
         }
 
         SearchResults(matchedMCQs, matchedShortQs, aiExplanation)
