@@ -132,3 +132,16 @@ data class ShortQuestion(
     val chapterName: String,
     val referenceTopic: String
 )
+
+@Entity(tableName = "feedback_notifications")
+@com.squareup.moshi.JsonClass(generateAdapter = true)
+data class FeedbackNotification(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val studentName: String,
+    val studentEmail: String,
+    val itemType: String, // "Lecture" or "Material/Note"
+    val itemId: String,
+    val itemTitle: String,
+    val timestamp: Long = System.currentTimeMillis()
+) : Serializable
+

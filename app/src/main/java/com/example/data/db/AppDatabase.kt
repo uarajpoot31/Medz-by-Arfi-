@@ -16,9 +16,10 @@ import com.example.data.model.*
         BookmarkedMCQ::class,
         VideoLecture::class,
         AppPreferences::class,
-        CustomUploadedFile::class
+        CustomUploadedFile::class,
+        FeedbackNotification::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +33,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookmarkedMCQDao(): BookmarkedMCQDao
     abstract fun videoLectureDao(): VideoLectureDao
     abstract fun appPreferencesDao(): AppPreferencesDao
+    abstract fun feedbackNotificationDao(): FeedbackNotificationDao
+
 
     companion object {
         @Volatile

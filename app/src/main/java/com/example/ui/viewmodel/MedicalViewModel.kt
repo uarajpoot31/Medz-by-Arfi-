@@ -66,6 +66,10 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     val bookmarks: StateFlow<List<BookmarkedMCQ>> = repository.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allNotifications: StateFlow<List<FeedbackNotification>> = repository.allNotifications
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+
     // Merged MCQ Lists
     val allMCQs: StateFlow<List<MedicalMCQ>> = repository.observeAllMCQs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -875,6 +879,34 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
             onDone()
         }
     }
+
+    fun submitLikeFeedback(itemType: String, itemId: String, itemTitle: String) {
+        viewModelScope.launch {
+            val currentEmail = _currentUserEmail.value
+            val currentName = userProfile.value?.name ?: "Dr. Student"
+            val notification = FeedbackNotification(
+                studentName = currentName,
+                studentEmail = currentEmail,
+                itemType = itemType,
+                itemId = itemId,
+                itemTitle = itemTitle
+            )
+            repository.addFeedbackNotification(notification)
+        }
+    }
+
+    fun deleteNotificationById(id: Long) {
+        viewModelScope.launch {
+            repository.deleteNotificationById(id)
+        }
+    }
+
+    fun clearAllNotifications() {
+        viewModelScope.launch {
+            repository.clearAllNotifications()
+        }
+    }
+
 
     // --- ADMIN MCQ LOGIC ---
     fun createAdminMCQ() {

@@ -177,3 +177,25 @@ interface CustomUploadedFileDao {
     @Query("DELETE FROM custom_uploaded_files")
     suspend fun clearUploadedFiles()
 }
+
+@Dao
+interface FeedbackNotificationDao {
+    @Query("SELECT * FROM feedback_notifications ORDER BY timestamp DESC")
+    fun getAllNotificationsFlow(): Flow<List<FeedbackNotification>>
+
+    @Query("SELECT * FROM feedback_notifications ORDER BY timestamp DESC")
+    suspend fun getAllNotifications(): List<FeedbackNotification>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotification(notification: FeedbackNotification)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotifications(notifications: List<FeedbackNotification>)
+
+    @Query("DELETE FROM feedback_notifications WHERE id = :id")
+    suspend fun deleteNotification(id: Long)
+
+    @Query("DELETE FROM feedback_notifications")
+    suspend fun clearNotifications()
+}
+

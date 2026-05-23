@@ -35,6 +35,17 @@ data class GeminiCandidate(val content: GeminiContent)
 @JsonClass(generateAdapter = true)
 data class GeminiResponse(val candidates: List<GeminiCandidate>?)
 
+@JsonClass(generateAdapter = true)
+data class CloudSyncData(
+    val files: List<CustomUploadedFile> = emptyList(),
+    val mcqs: List<CustomMCQ> = emptyList(),
+    val seqs: List<CustomSEQ> = emptyList(),
+    val customGeminiApiKey: String = "",
+    val lectures: List<VideoLecture> = emptyList(),
+    val profiles: List<UserProfile> = emptyList(),
+    val notifications: List<FeedbackNotification> = emptyList()
+)
+
 class MedicalRepository(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
@@ -47,6 +58,8 @@ class MedicalRepository(private val context: Context) {
     private val bookmarkedMCQDao = db.bookmarkedMCQDao()
     private val videoLectureDao = db.videoLectureDao()
     private val appPreferencesDao = db.appPreferencesDao()
+    private val feedbackNotificationDao = db.feedbackNotificationDao()
+
 
     // Moshi & OkHttpClient Init
     private val moshi = Moshi.Builder()
@@ -70,6 +83,7 @@ class MedicalRepository(private val context: Context) {
     val bookmarks: Flow<List<BookmarkedMCQ>> = bookmarkedMCQDao.getBookmarksFlow()
     val allVideoLectures: Flow<List<VideoLecture>> = videoLectureDao.getAllVideoLecturesFlow()
     val appPreferences: Flow<AppPreferences?> = appPreferencesDao.getAppPreferencesFlow()
+    val allNotifications: Flow<List<FeedbackNotification>> = feedbackNotificationDao.getAllNotificationsFlow()
 
     // Combine predefined and custom questions
     fun observeAllMCQs(): Flow<List<MedicalMCQ>> {
@@ -181,6 +195,7 @@ class MedicalRepository(private val context: Context) {
 
     suspend fun updateProfile(profile: UserProfile) = withContext(Dispatchers.IO) {
         userProfileDao.insertProfile(profile)
+        pushAllCustomData()
     }
 
     suspend fun addCustomMCQ(mcq: CustomMCQ) = withContext(Dispatchers.IO) {
@@ -274,6 +289,21 @@ class MedicalRepository(private val context: Context) {
 
     suspend fun saveNote(note: Note) = withContext(Dispatchers.IO) {
         noteDao.insertNote(note)
+    }
+
+    suspend fun addFeedbackNotification(notification: FeedbackNotification) = withContext(Dispatchers.IO) {
+        feedbackNotificationDao.insertNotification(notification)
+        pushAllCustomData()
+    }
+
+    suspend fun deleteNotificationById(id: Long) = withContext(Dispatchers.IO) {
+        feedbackNotificationDao.deleteNotification(id)
+        pushAllCustomData()
+    }
+
+    suspend fun clearAllNotifications() = withContext(Dispatchers.IO) {
+        feedbackNotificationDao.clearNotifications()
+        pushAllCustomData()
     }
 
     suspend fun deleteNote(id: Long) = withContext(Dispatchers.IO) {
@@ -386,173 +416,129 @@ class MedicalRepository(private val context: Context) {
     }
 
     // --- SHARED CLOUD SYNCHRONIZATION WITH KVDB.IO ---
-    private val customFilesListAdapter by lazy {
-        moshi.adapter<List<CustomUploadedFile>>(
-            com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomUploadedFile::class.java)
-        )
-    }
-    private val customMCQListAdapter by lazy {
-        moshi.adapter<List<CustomMCQ>>(
-            com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomMCQ::class.java)
-        )
-    }
-    private val customSEQListAdapter by lazy {
-        moshi.adapter<List<CustomSEQ>>(
-            com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomSEQ::class.java)
-        )
-    }
-    private val customLecturesListAdapter by lazy {
-        moshi.adapter<List<VideoLecture>>(
-            com.squareup.moshi.Types.newParameterizedType(List::class.java, VideoLecture::class.java)
-        )
+    private val cloudSyncAdapter by lazy {
+        moshi.adapter(CloudSyncData::class.java)
     }
 
     suspend fun pushAllCustomData() = withContext(Dispatchers.IO) {
         try {
-            // Push Files
             val filesList = customUploadedFileDao.getAllUploadedFiles()
-            val filesJson = customFilesListAdapter.toJson(filesList)
-            val req1 = Request.Builder()
-                .url("https://kvdb.io/pk_medzwitharfi_v817/files")
-                .put(filesJson.toRequestBody("application/json".toMediaType()))
-                .build()
-            okHttpClient.newCall(req1).execute().close()
-
-            // Push MCQs
             val mcqsList = customMCQDao.getAllCustomMCQs()
-            val mcqsJson = customMCQListAdapter.toJson(mcqsList)
-            val req2 = Request.Builder()
-                .url("https://kvdb.io/pk_medzwitharfi_v817/mcqs")
-                .put(mcqsJson.toRequestBody("application/json".toMediaType()))
-                .build()
-            okHttpClient.newCall(req2).execute().close()
-
-            // Push SEQs
             val seqsList = customSEQDao.getAllCustomSEQs()
-            val seqsJson = customSEQListAdapter.toJson(seqsList)
-            val req3 = Request.Builder()
-                .url("https://kvdb.io/pk_medzwitharfi_v817/seqs")
-                .put(seqsJson.toRequestBody("application/json".toMediaType()))
-                .build()
-            okHttpClient.newCall(req3).execute().close()
-
-            // Push API Key
             val appPref = appPreferencesDao.getAppPreferences() ?: AppPreferences()
             val apiKey = appPref.customGeminiApiKey ?: ""
-            val req4 = Request.Builder()
-                .url("https://kvdb.io/pk_medzwitharfi_v817/apikey")
-                .put(apiKey.toRequestBody("text/plain".toMediaType()))
-                .build()
-            okHttpClient.newCall(req4).execute().close()
-
-            // Push Lectures
             val lecturesList = videoLectureDao.getAllVideoLectures()
-            val lecturesJson = customLecturesListAdapter.toJson(lecturesList)
-            val req5 = Request.Builder()
-                .url("https://kvdb.io/pk_medzwitharfi_v817/lectures")
-                .put(lecturesJson.toRequestBody("application/json".toMediaType()))
-                .build()
-            okHttpClient.newCall(req5).execute().close()
+            val profilesList = userProfileDao.getAllProfiles()
+            val notificationsList = feedbackNotificationDao.getAllNotifications()
 
-            Log.d("SyncCloud", "Successfully pushed all data to cloud.")
+            val syncData = CloudSyncData(
+                files = filesList,
+                mcqs = mcqsList,
+                seqs = seqsList,
+                customGeminiApiKey = apiKey,
+                lectures = lecturesList,
+                profiles = profilesList,
+                notifications = notificationsList
+            )
+
+            val jsonString = cloudSyncAdapter.toJson(syncData)
+            val request = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/alldata")
+                .put(jsonString.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                Log.d("SyncCloud", "Successfully pushed consolidated data to cloud. Status code: ${response.code}")
+            }
         } catch (e: Exception) {
-            Log.e("SyncCloud", "Failed to push and write cloud data: ", e)
+            Log.e("SyncCloud", "Failed to push consolidated cloud data: ", e)
         }
     }
 
     suspend fun pullAllCustomData() = withContext(Dispatchers.IO) {
         try {
-            // Pull Files
-            val req1 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/files").get().build()
-            okHttpClient.newCall(req1).execute().use { response ->
+            val request = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/alldata")
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string()
                     if (!body.isNullOrBlank() && body != "not found") {
-                        val files = customFilesListAdapter.fromJson(body)
-                        if (files != null) {
+                        val syncData = cloudSyncAdapter.fromJson(body)
+                        if (syncData != null) {
+                            // 1. Sync Files
                             customUploadedFileDao.clearUploadedFiles()
-                            customUploadedFileDao.insertUploadedFiles(files)
-                        }
-                    }
-                }
-            }
+                            customUploadedFileDao.insertUploadedFiles(syncData.files)
 
-            // Pull MCQs
-            val req2 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/mcqs").get().build()
-            okHttpClient.newCall(req2).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank() && body != "not found") {
-                        val mcqs = customMCQListAdapter.fromJson(body)
-                        if (mcqs != null) {
+                            // 2. Sync MCQs
                             customMCQDao.clearCustomMCQs()
-                            customMCQDao.insertCustomMCQs(mcqs)
-                        }
-                    }
-                }
-            }
+                            customMCQDao.insertCustomMCQs(syncData.mcqs)
 
-            // Pull SEQs
-            val req3 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/seqs").get().build()
-            okHttpClient.newCall(req3).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank() && body != "not found") {
-                        val seqs = customSEQListAdapter.fromJson(body)
-                        if (seqs != null) {
+                            // 3. Sync SEQs
                             customSEQDao.clearCustomSEQs()
-                            customSEQDao.insertCustomSEQs(seqs)
+                            customSEQDao.insertCustomSEQs(syncData.seqs)
+
+                            // 4. Sync lectures
+                            if (syncData.lectures.isNotEmpty()) {
+                                videoLectureDao.clearVideoLectures()
+                                videoLectureDao.insertVideoLectures(syncData.lectures)
+                            }
+
+                            // 5. Sync Gemini API Key
+                            if (syncData.customGeminiApiKey.isNotEmpty()) {
+                                val existingPref = appPreferencesDao.getAppPreferences() ?: AppPreferences()
+                                if (existingPref.customGeminiApiKey != syncData.customGeminiApiKey) {
+                                    appPreferencesDao.insertAppPreferences(existingPref.copy(customGeminiApiKey = syncData.customGeminiApiKey))
+                                }
+                            }
+
+                            // 6. Sync User Profiles (Collaborative roster)
+                            val localProfiles = userProfileDao.getAllProfiles()
+                            val localMap = localProfiles.associateBy { it.email }
+
+                            syncData.profiles.forEach { pulledProfile ->
+                                val localProfile = localMap[pulledProfile.email]
+                                if (localProfile == null) {
+                                    userProfileDao.insertProfile(pulledProfile)
+                                } else if (pulledProfile.lastActiveTime > localProfile.lastActiveTime) {
+                                    userProfileDao.insertProfile(pulledProfile)
+                                }
+                            }
+
+                            // 7. Sync Feedback Notifications
+                            val localNotifications = feedbackNotificationDao.getAllNotifications()
+                            val localSignatures = localNotifications.map { "${it.studentEmail}_${it.itemId}_${it.timestamp}" }.toSet()
+
+                            syncData.notifications.forEach { pulledNotification ->
+                                val sig = "${pulledNotification.studentEmail}_${pulledNotification.itemId}_${pulledNotification.timestamp}"
+                                if (!localSignatures.contains(sig)) {
+                                    feedbackNotificationDao.insertNotification(pulledNotification.copy(id = 0))
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            // Pull API Key
-            val req4 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/apikey").get().build()
-            okHttpClient.newCall(req4).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank() && body != "not found") {
-                        val existingPref = appPreferencesDao.getAppPreferences() ?: AppPreferences()
-                        if (existingPref.customGeminiApiKey != body) {
-                            appPreferencesDao.insertAppPreferences(existingPref.copy(customGeminiApiKey = body))
-                        }
-                    }
-                }
-            }
-
-            // Pull Lectures
-            val req5 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/lectures").get().build()
-            okHttpClient.newCall(req5).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank() && body != "not found") {
-                        val lectures = customLecturesListAdapter.fromJson(body)
-                        if (!lectures.isNullOrEmpty()) {
-                            videoLectureDao.clearVideoLectures()
-                            videoLectureDao.insertVideoLectures(lectures)
-                        }
-                    }
-                }
-            }
-
-            Log.d("SyncCloud", "Successfully synced and downloaded cloud data.")
+            Log.d("SyncCloud", "Successfully synced and downloaded consolidated cloud data.")
         } catch (e: Exception) {
-            Log.e("SyncCloud", "Failed to pull cloud sync data: ", e)
+            Log.e("SyncCloud", "Failed to pull consolidated cloud sync data: ", e)
         }
     }
 
     suspend fun sendWelcomeEmailViaNetwork(email: String, name: String) = withContext(Dispatchers.IO) {
         try {
-            // Send automatic welcome email via Web3Forms secure free endpoint directly to student's inbox!
+            // Send secure, beautifully structured Web3Forms form submission to medzwitharfi@gmail.com
+            // AND trigger a highly professional outbound autoresponder to the student's email ($email) of their sign-up.
             val bodyJson = """
                 {
                     "access_key": "c82ef9ff-3dc9-42b7-a3f2-1d52d9a5b3a8",
-                    "subject": "Welcome to Medz with Arfi",
-                    "name": "Medz with Arfi Admin Support",
-                    "email": "medzwitharfi@gmail.com",
-                    "to_email": "$email",
-                    "message": "Assalamu Alaikum $name!\n\nWelcome to Medz with Arfi - Your premium academic hub for MBBS Anatomy & Physiology mastery, guided by Dr. Arfi.\n\nWe are extremely excited to help you excel in your medical studies.\n\nFor direct admin support or resources request, you can contact us 24/7 on WhatsApp: 03246767582 (+923246767582).\n\nBest Regards,\nMedz with Arfi Support Team"
+                    "from_name": "Medz with Arfi Support Table",
+                    "subject": "🎉 Welcome to Medz with Arfi!",
+                    "email": "$email",
+                    "name": "$name",
+                    "message": "Assalamu Alaikum $name!\n\nWelcome to Medz with Arfi - Your premium academic hub for MBBS Anatomy & Physiology mastery, guided by Dr. Arfi.\n\nWe are extremely excited to help you excel in your medical studies.\n\nFor direct admin support, educational material requests, or queries, you can contact us 24/7 on WhatsApp: 03246767582 (+923246767582).\n\nBest Regards,\nMedz with Arfi Support Team"
                 }
             """.trimIndent()
 
