@@ -141,11 +141,32 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     var quizState by mutableStateOf(ActiveQuizState())
     val seenQuestionStems = mutableStateListOf<String>()
 
+    // Persistent Video Playback State surviving screen/orientation rotation changes
+    var videoToPlay by mutableStateOf<VideoLecture?>(null)
+    var isVideoFullScreen by mutableStateOf(false)
+    var showWelcomeSupportDialog by mutableStateOf(false)
+    var welcomeDialogStudentName by mutableStateOf("")
+
     init {
         viewModelScope.launch {
             repository.ensureProfileExists()
             // High-fidelity pull of administrative sync data (uploaded files, custom MCQs/SEQs, custom API keys) from KVDB shared cloud!
-            repository.pullAllCustomData()
+            try {
+                repository.pullAllCustomData()
+            } catch (e: Exception) {
+                // Ignore transient initial network connectivity warnings
+            }
+
+            // Continuous background pooling loop running every 10 seconds.
+            // When an admin uploads anything (file, lecture, custom questions), it will immediately propagate to student devices automatically!
+            while (true) {
+                kotlinx.coroutines.delay(10000)
+                try {
+                    repository.pullAllCustomData()
+                } catch (e: Exception) {
+                    // Let background synchronization fail silently without interrupting active student session
+                }
+            }
         }
         // Seed default chat message
         chatHistory.add(ChatMessage("ai", "Hello! I am Dr. Arfi's Smart AI Assistant. Ask me any Anatomy & Physiology questions, request customized quizzes, or seek clinical explanations!"))
@@ -231,6 +252,13 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
             isAdminLoggedIn = false
             authError = null
             selectedTab = "dashboard"
+            welcomeDialogStudentName = authName
+            showWelcomeSupportDialog = true
+            try {
+                repository.sendWelcomeEmailViaNetwork(authEmail, authName)
+            } catch (e: Exception) {
+                // Suppress background thread network warnings
+            }
         }
     }
 
@@ -284,6 +312,13 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
             isLoggedIn = true
             isAdminLoggedIn = false
             selectedTab = "dashboard"
+            welcomeDialogStudentName = name
+            showWelcomeSupportDialog = true
+            try {
+                repository.sendWelcomeEmailViaNetwork(resolvedEmail, name)
+            } catch (e: Exception) {
+                // Suppress background thread network warnings
+            }
         }
     }
 

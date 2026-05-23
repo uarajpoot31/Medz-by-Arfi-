@@ -39,11 +39,20 @@ interface VideoLectureDao {
     @Query("SELECT * FROM video_lectures WHERE bookSource = :book AND chapterName = :chapter ORDER BY id DESC")
     fun getVideoLecturesForChapterFlow(book: String, chapter: String): Flow<List<VideoLecture>>
 
+    @Query("SELECT * FROM video_lectures")
+    suspend fun getAllVideoLectures(): List<VideoLecture>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVideoLecture(lecture: VideoLecture)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVideoLectures(lectures: List<VideoLecture>)
+
     @Query("DELETE FROM video_lectures WHERE id = :id")
     suspend fun deleteVideoLecture(id: Long)
+
+    @Query("DELETE FROM video_lectures")
+    suspend fun clearVideoLectures()
 }
 
 @Dao

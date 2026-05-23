@@ -14,7 +14,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import android.widget.Toast
@@ -115,6 +119,40 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
     val isLoggedIn = viewModel.isLoggedIn
     val isAdminLoggedIn = viewModel.isAdminLoggedIn
     val appPrefs by viewModel.appPreferences.collectAsState()
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? android.app.Activity
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+
+    androidx.activity.compose.BackHandler {
+        if (viewModel.videoToPlay != null) {
+            if (viewModel.isVideoFullScreen) {
+                viewModel.isVideoFullScreen = false
+            } else {
+                viewModel.videoToPlay = null
+            }
+        } else if (isLoggedIn && !isAdminLoggedIn) {
+            if (viewModel.selectedTab != "dashboard") {
+                viewModel.selectedTab = "dashboard"
+            } else {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastBackPressTime < 2000L) {
+                    activity?.finish()
+                } else {
+                    lastBackPressTime = currentTime
+                    Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastBackPressTime < 2000L) {
+                activity?.finish()
+            } else {
+                lastBackPressTime = currentTime
+                Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     if (!isLoggedIn) {
         AuthScreen(viewModel)
@@ -233,11 +271,27 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                     else -> DashboardTab(viewModel)
                 }
 
-                // WhatsApp Support Floating Action Badge (03246767582 Contact)
+                // WhatsApp Support Floating Action Badge (03246767582 Contact) - Now draggable and uses real brand WhatsApp icon
                 val context = androidx.compose.ui.platform.LocalContext.current
+                var waOffsetX by rememberSaveable { mutableStateOf(0f) }
+                var waOffsetY by rememberSaveable { mutableStateOf(0f) }
+
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
+                        .offset { IntOffset(waOffsetX.roundToInt(), waOffsetY.roundToInt()) }
+                        .pointerInput(Unit) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {},
+                                onDragEnd = {},
+                                onDragCancel = {},
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    waOffsetX += dragAmount.x
+                                    waOffsetY += dragAmount.y
+                                }
+                            )
+                        }
                         .padding(bottom = 16.dp, end = 16.dp)
                         .testTag("whatsapp_support_button")
                 ) {
@@ -265,10 +319,10 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                             .background(Color(0xFF25D366), RoundedCornerShape(26.dp))
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Chat,
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_whatsapp),
                             contentDescription = "WhatsApp Admin Support",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            tint = Color.Unspecified, // Keep original colors
+                            modifier = Modifier.size(28.dp)
                         )
                     }
 
@@ -285,6 +339,123 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                                 .fillMaxSize()
                                 .background(Color(0xFF4CAF50), RoundedCornerShape(5.dp))
                         )
+                    }
+                }
+            }
+        }
+    }
+
+    // High Fidelity Welcome & WhatsApp Support Dialog
+    if (viewModel.showWelcomeSupportDialog) {
+        Dialog(onDismissRequest = { viewModel.showWelcomeSupportDialog = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = WarmWhite)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .background(Color(0xFFE8F5E9), RoundedCornerShape(30.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Success",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Aap ka Account Ban Gaya!",
+                        fontWeight = FontWeight.Bold,
+                        color = DeepMaroon,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Assalamu Alaikum ${viewModel.welcomeDialogStudentName}!\n\nWelcome to Medz with Arfi! Aap ki Gmail par automatically welcome message bhej diya gaya hai.",
+                        color = Color.DarkGray,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Need Support or Study Materials?",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "WhatsApp Support (03246767582) is available 24/7. Click below to connect!",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.showWelcomeSupportDialog = false },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.DarkGray),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("OKAY", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                viewModel.showWelcomeSupportDialog = false
+                                val phoneNumber = "923246767582"
+                                val message = "Assalamualaikum sir! I need academic/studying help in Medz With Arfi."
+                                try {
+                                    val encodedMsg = java.net.URLEncoder.encode(message, "UTF-8")
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        data = android.net.Uri.parse("https://api.whatsapp.com/send?phone=${phoneNumber}&text=${encodedMsg}")
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    val encodedMsg = java.net.URLEncoder.encode(message, "UTF-8")
+                                    val fallbackIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        data = android.net.Uri.parse("https://web.whatsapp.com/send?phone=${phoneNumber}&text=${encodedMsg}")
+                                    }
+                                    context.startActivity(fallbackIntent)
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                            modifier = Modifier.weight(1.3f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_whatsapp),
+                                    contentDescription = "WhatsApp Dialog Support",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("WHATSAPP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
                     }
                 }
             }
@@ -921,7 +1092,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
     val allLectures by viewModel.allVideoLectures.collectAsState()
     var selectedBookFilter by remember { mutableStateOf("All Books") }
     var searchQuery by remember { mutableStateOf("") }
-    var videoToPlay by remember { mutableStateOf<VideoLecture?>(null) }
+    val videoToPlay = viewModel.videoToPlay
 
     val filteredLectures = allLectures.filter { lecture ->
         val matchesBook = when (selectedBookFilter) {
@@ -1110,7 +1281,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
                             Divider(color = LightCream, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
 
                             Button(
-                                onClick = { videoToPlay = video },
+                                onClick = { viewModel.videoToPlay = video },
                                 colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.fillMaxWidth().height(36.dp)
@@ -1129,7 +1300,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
     // Classroom Video Player inside dashboard with Fullscreen & Screen Rotation control
     if (videoToPlay != null) {
         val video = videoToPlay!!
-        var isFullScreen by remember { mutableStateOf(false) }
+        val isFullScreen = viewModel.isVideoFullScreen
         val context = androidx.compose.ui.platform.LocalContext.current
         val activity = context as? android.app.Activity
 
@@ -1149,7 +1320,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
 
         Dialog(
             onDismissRequest = { 
-                videoToPlay = null 
+                viewModel.videoToPlay = null 
                 activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             },
             properties = androidx.compose.ui.window.DialogProperties(
@@ -1178,7 +1349,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
 
                     // Exit Full Screen Trigger overlay
                     IconButton(
-                        onClick = { isFullScreen = false },
+                        onClick = { viewModel.isVideoFullScreen = false },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(16.dp)
@@ -1194,7 +1365,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
 
                     // Rotate Back overlay on the bottom right
                     IconButton(
-                        onClick = { isFullScreen = false },
+                        onClick = { viewModel.isVideoFullScreen = false },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(16.dp)
@@ -1234,7 +1405,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            IconButton(onClick = { videoToPlay = null }) {
+                            IconButton(onClick = { viewModel.videoToPlay = null }) {
                                 Icon(Icons.Default.Close, null, tint = Color.White)
                             }
                         }
@@ -1263,7 +1434,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
 
                             // Rotate / Fullscreen Button at bottom end of the video view
                             IconButton(
-                                onClick = { isFullScreen = true },
+                                onClick = { viewModel.isVideoFullScreen = true },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .padding(8.dp)
@@ -1323,7 +1494,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
-                                onClick = { isFullScreen = true },
+                                onClick = { viewModel.isVideoFullScreen = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp)
@@ -1333,7 +1504,7 @@ fun VideosTab(viewModel: MedicalViewModel) {
                                 Text("ROTATE FULL SCREEN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                             Button(
-                                onClick = { videoToPlay = null },
+                                onClick = { viewModel.videoToPlay = null },
                                 colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp)
@@ -2042,7 +2213,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
 
     var activeChapterForVideos by remember { mutableStateOf<String?>(null) }
     var activeBookForVideos by remember { mutableStateOf<String?>(null) }
-    var videoToPlay by remember { mutableStateOf<VideoLecture?>(null) }
+    val videoToPlay = viewModel.videoToPlay
 
     Column(
         modifier = Modifier
@@ -2451,7 +2622,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
                                         Text(video.description, fontSize = 11.sp, color = Color.DarkGray)
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Button(
-                                            onClick = { videoToPlay = video },
+                                            onClick = { viewModel.videoToPlay = video },
                                             colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
                                             shape = RoundedCornerShape(6.dp),
                                             modifier = Modifier.fillMaxWidth()
@@ -2473,7 +2644,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
     // HIGH FIDELITY IN-APP INTERACTIVE CLASSROOM WEB PLAYER with Fullscreen & Screen Rotation control
     if (videoToPlay != null) {
         val video = videoToPlay!!
-        var isFullScreen by remember { mutableStateOf(false) }
+        val isFullScreen = viewModel.isVideoFullScreen
         val context = androidx.compose.ui.platform.LocalContext.current
         val activity = context as? android.app.Activity
 
@@ -2493,7 +2664,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
 
         Dialog(
             onDismissRequest = { 
-                videoToPlay = null 
+                viewModel.videoToPlay = null 
                 activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             },
             properties = androidx.compose.ui.window.DialogProperties(
@@ -2522,7 +2693,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
 
                     // Exit Full Screen Trigger overlay
                     IconButton(
-                        onClick = { isFullScreen = false },
+                        onClick = { viewModel.isVideoFullScreen = false },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(16.dp)
@@ -2538,7 +2709,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
 
                     // Rotate Back overlay on the bottom right
                     IconButton(
-                        onClick = { isFullScreen = false },
+                        onClick = { viewModel.isVideoFullScreen = false },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(16.dp)
@@ -2578,7 +2749,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            IconButton(onClick = { videoToPlay = null }) {
+                            IconButton(onClick = { viewModel.videoToPlay = null }) {
                                 Icon(Icons.Default.Close, null, tint = Color.White)
                             }
                         }
@@ -2607,7 +2778,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
 
                             // Rotate / Fullscreen Button at bottom end of the video view
                             IconButton(
-                                onClick = { isFullScreen = true },
+                                onClick = { viewModel.isVideoFullScreen = true },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .padding(8.dp)
@@ -2649,7 +2820,7 @@ fun StudyTab(viewModel: MedicalViewModel) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Button(
-                                    onClick = { isFullScreen = true },
+                                    onClick = { viewModel.isVideoFullScreen = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp)

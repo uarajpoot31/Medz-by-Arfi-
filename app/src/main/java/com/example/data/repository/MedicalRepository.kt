@@ -236,10 +236,12 @@ class MedicalRepository(private val context: Context) {
 
     suspend fun addVideoLecture(lecture: VideoLecture) = withContext(Dispatchers.IO) {
         videoLectureDao.insertVideoLecture(lecture)
+        pushAllCustomData()
     }
 
     suspend fun deleteVideoLecture(id: Long) = withContext(Dispatchers.IO) {
         videoLectureDao.deleteVideoLecture(id)
+        pushAllCustomData()
     }
 
     suspend fun saveQuizScore(score: QuizScore, userEmail: String) = withContext(Dispatchers.IO) {
@@ -399,6 +401,11 @@ class MedicalRepository(private val context: Context) {
             com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomSEQ::class.java)
         )
     }
+    private val customLecturesListAdapter by lazy {
+        moshi.adapter<List<VideoLecture>>(
+            com.squareup.moshi.Types.newParameterizedType(List::class.java, VideoLecture::class.java)
+        )
+    }
 
     suspend fun pushAllCustomData() = withContext(Dispatchers.IO) {
         try {
@@ -437,6 +444,15 @@ class MedicalRepository(private val context: Context) {
                 .put(apiKey.toRequestBody("text/plain".toMediaType()))
                 .build()
             okHttpClient.newCall(req4).execute().close()
+
+            // Push Lectures
+            val lecturesList = videoLectureDao.getAllVideoLectures()
+            val lecturesJson = customLecturesListAdapter.toJson(lecturesList)
+            val req5 = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/lectures")
+                .put(lecturesJson.toRequestBody("application/json".toMediaType()))
+                .build()
+            okHttpClient.newCall(req5).execute().close()
 
             Log.d("SyncCloud", "Successfully pushed all data to cloud.")
         } catch (e: Exception) {
@@ -505,9 +521,51 @@ class MedicalRepository(private val context: Context) {
                 }
             }
 
+            // Pull Lectures
+            val req5 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/lectures").get().build()
+            okHttpClient.newCall(req5).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "not found") {
+                        val lectures = customLecturesListAdapter.fromJson(body)
+                        if (!lectures.isNullOrEmpty()) {
+                            videoLectureDao.clearVideoLectures()
+                            videoLectureDao.insertVideoLectures(lectures)
+                        }
+                    }
+                }
+            }
+
             Log.d("SyncCloud", "Successfully synced and downloaded cloud data.")
         } catch (e: Exception) {
             Log.e("SyncCloud", "Failed to pull cloud sync data: ", e)
+        }
+    }
+
+    suspend fun sendWelcomeEmailViaNetwork(email: String, name: String) = withContext(Dispatchers.IO) {
+        try {
+            // Send automatic welcome email via Web3Forms secure free endpoint directly to student's inbox!
+            val bodyJson = """
+                {
+                    "access_key": "c82ef9ff-3dc9-42b7-a3f2-1d52d9a5b3a8",
+                    "subject": "Welcome to Medz with Arfi",
+                    "name": "Medz with Arfi Admin Support",
+                    "email": "medzwitharfi@gmail.com",
+                    "to_email": "$email",
+                    "message": "Assalamu Alaikum $name!\n\nWelcome to Medz with Arfi - Your premium academic hub for MBBS Anatomy & Physiology mastery, guided by Dr. Arfi.\n\nWe are extremely excited to help you excel in your medical studies.\n\nFor direct admin support or resources request, you can contact us 24/7 on WhatsApp: 03246767582 (+923246767582).\n\nBest Regards,\nMedz with Arfi Support Team"
+                }
+            """.trimIndent()
+
+            val req = Request.Builder()
+                .url("https://api.web3forms.com/submit")
+                .post(bodyJson.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            okHttpClient.newCall(req).execute().use { response ->
+                Log.d("EmailSender", "Welcome email automated send code: ${response.code}")
+            }
+        } catch (e: Exception) {
+            Log.e("EmailSender", "Background welcome email dispatch failed: ", e)
         }
     }
 }
