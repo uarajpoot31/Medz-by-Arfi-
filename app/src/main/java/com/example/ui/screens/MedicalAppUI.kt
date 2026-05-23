@@ -39,6 +39,9 @@ import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.accounts.AccountManager
+import android.app.Activity
 
 fun getLogoIcon(iconName: String): androidx.compose.ui.graphics.vector.ImageVector {
     return when (iconName) {
@@ -254,6 +257,20 @@ fun AuthScreen(viewModel: MedicalViewModel) {
     var otpDigits by remember { mutableStateOf("") }
     var otpErrorText by remember { mutableStateOf<String?>(null) }
 
+    val googleAccountPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+            if (!accountName.isNullOrBlank()) {
+                chosenGoogleEmail = accountName
+                viewModel.checkAndPerformGoogleLogin(accountName) {
+                    showGoogleFormDialog = true
+                }
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -403,9 +420,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                                 } else if (password.length < 5) {
                                     viewModel.authError = "Secure password must be at least 5 characters."
                                 } else {
-                                    otpDigits = ""
-                                    otpErrorText = null
-                                    showOtpSignUpDialog = true
+                                    viewModel.performSignUp()
                                 }
                             } else {
                                 viewModel.performLogin()
@@ -439,7 +454,31 @@ fun AuthScreen(viewModel: MedicalViewModel) {
 
                     // OAuth Google integration support demo
                     OutlinedButton(
-                        onClick = { showGoogleAccountPicker = true },
+                        onClick = {
+                            try {
+                                val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                    AccountManager.newChooseAccountIntent(
+                                        null, null, arrayOf("com.google"), null, null, null, null
+                                    )
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    AccountManager.newChooseAccountIntent(
+                                        null, null, arrayOf("com.google"), false, null, null, null, null
+                                    )
+                                }
+                                if (intent != null) {
+                                    try {
+                                        googleAccountPickerLauncher.launch(intent)
+                                    } catch (launchEx: Exception) {
+                                        showGoogleAccountPicker = true
+                                    }
+                                } else {
+                                    showGoogleAccountPicker = true
+                                }
+                            } catch (e: Exception) {
+                                showGoogleAccountPicker = true
+                            }
+                        },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.DarkGray),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
@@ -504,94 +543,44 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                         Text("Select an active Google account to authorize", fontSize = 11.sp, color = Color.Gray)
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val mockAccounts = listOf(
-                            "uarajpoot31@gmail.com" to "UA Rajpoot",
-                            "medical_pioneer123@gmail.com" to "Dr. Pioneer Student",
-                            "arfi.clinical.vault@gmail.com" to "Clinical Scholar"
+                        OutlinedTextField(
+                            value = customGmailInput,
+                            onValueChange = { customGmailInput = it },
+                            label = { Text("Gmail Address") },
+                            placeholder = { Text("username@gmail.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
                         )
-
-                        mockAccounts.forEach { (gEmail, gLabel) ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable {
-                                        showGoogleAccountPicker = false
-                                        viewModel.checkAndPerformGoogleLogin(gEmail) {
-                                            chosenGoogleEmail = gEmail
-                                            showGoogleFormDialog = true
-                                        }
-                                    },
-                                colors = CardDefaults.cardColors(containerColor = LightCream.copy(alpha = 0.5f)),
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showGoogleAccountPicker = false },
+                                modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(DeepMaroon),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(gLabel.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    }
-                                    Column {
-                                        Text(gLabel, fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 12.sp)
-                                        Text(gEmail, color = Color.Gray, fontSize = 10.sp)
-                                    }
-                                }
+                                Text("Cancel", fontSize = 11.sp)
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        if (!showCustomInput) {
-                            TextButton(onClick = { showCustomInput = true }) {
-                                Text("+ Use another Google Account", color = MedicineGold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        } else {
-                            OutlinedTextField(
-                                value = customGmailInput,
-                                onValueChange = { customGmailInput = it },
-                                label = { Text("Enter Gmail Address") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { showCustomInput = false },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Back", fontSize = 11.sp)
-                                }
-                                Button(
-                                    onClick = {
-                                        if (customGmailInput.contains("@") && customGmailInput.contains("gmail")) {
-                                            showGoogleAccountPicker = false
-                                            viewModel.checkAndPerformGoogleLogin(customGmailInput) {
-                                                chosenGoogleEmail = customGmailInput
-                                                showGoogleFormDialog = true
-                                            }
-                                        } else {
-                                            customGmailInput = "Invalid Gmail Address (e.g. user@gmail.com)"
+                            Button(
+                                onClick = {
+                                    if (customGmailInput.contains("@") && customGmailInput.contains("gmail")) {
+                                        showGoogleAccountPicker = false
+                                        viewModel.checkAndPerformGoogleLogin(customGmailInput) {
+                                            chosenGoogleEmail = customGmailInput
+                                            showGoogleFormDialog = true
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Proceed", fontSize = 11.sp, color = Color.White)
-                                }
+                                    } else {
+                                        customGmailInput = "Invalid Gmail"
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                modifier = Modifier.weight(1.2f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("PROCEED", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -710,135 +699,87 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                     ) {
                         Icon(Icons.Default.LockReset, null, tint = DeepMaroon, modifier = Modifier.size(40.dp))
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(if (isOtpPhase) "Set New Password" else "Account Recovery", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 17.sp)
-                        Text(if (isOtpPhase) "Enter OTP code 888888 sent to Gmail" else "Select dynamic password retrieval options", fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                        Text("Account Recovery", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 17.sp)
+                        Text("Enter your Gmail address to verify your account details", fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center)
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        if (!isOtpPhase) {
-                            OutlinedTextField(
-                                value = forgotEmail,
-                                onValueChange = { forgotEmail = it },
-                                label = { Text("Your Registered Gmail Address") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
-                            )
+                        OutlinedTextField(
+                            value = forgotEmail,
+                            onValueChange = { forgotEmail = it },
+                            label = { Text("Your Registered Gmail Address") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                        )
 
-                            if (forgotMessage != null) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = LightCream),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        forgotMessage!!,
-                                        color = DeepMaroon,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(10.dp),
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                        if (forgotMessage != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = LightCream),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Button(
-                                    onClick = {
-                                        if (forgotEmail.isBlank()) {
-                                            forgotMessage = "Gmail address field is required."
-                                        } else {
-                                            viewModel.checkEmailExists(forgotEmail) { profile ->
-                                                if (profile != null) {
-                                                    forgotMessage = "Inbox recovery routed! Credentials: \nEmail: ${profile.email}\nUniversity: ${profile.collegeName}\n(For demo, you are now safe to log in!)"
-                                                } else {
-                                                    forgotMessage = "No custom registration found for $forgotEmail. Providing sample credentials:\nEmail: dummy@medzwitharfi.com\nPassword: 12345"
-                                                }
+                                Text(
+                                    forgotMessage!!,
+                                    color = DeepMaroon,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(10.dp),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    if (forgotEmail.isBlank()) {
+                                        forgotMessage = "Gmail address field is required."
+                                    } else {
+                                        viewModel.checkEmailExists(forgotEmail) { profile ->
+                                            if (profile != null) {
+                                                forgotMessage = "Account verified! \nEmail: ${profile.email}\nUniversity: ${profile.collegeName}\n(Click LOGIN below to enter instantly!)"
+                                            } else {
+                                                forgotMessage = "No profile found for $forgotEmail. You can register custom details, or use:\nEmail: dummy@medzwitharfi.com"
                                             }
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Send Password to Gmail Inbox", fontSize = 11.sp)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        if (forgotEmail.isBlank()) {
-                                            forgotMessage = "Gmail address field is required."
-                                        } else {
-                                            isOtpPhase = true
-                                            forgotMessage = null
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Change Password via Verification OTP", fontSize = 11.sp, color = DarkMaroon)
-                                }
-                            }
-                        } else {
-                            OutlinedTextField(
-                                value = enteredOtp,
-                                onValueChange = { enteredOtp = it },
-                                label = { Text("Code (Hint: 888888)") },
-                                singleLine = true,
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = newPassword,
-                                onValueChange = { newPassword = it },
-                                label = { Text("Type New Password") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
-                            )
-
-                            if (forgotMessage != null) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(forgotMessage!!, color = CoralRed, fontSize = 11.sp)
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Recover Registered Profile", fontSize = 11.sp, color = Color.White)
                             }
 
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    onClick = { isOtpPhase = false },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Back")
-                                }
-                                Button(
-                                    onClick = {
-                                        if (enteredOtp != "888888") {
-                                            forgotMessage = "Invalid verification code. Enter 888888."
-                                        } else if (newPassword.length < 5) {
-                                            forgotMessage = "New password must be at least 5 characters."
-                                        } else {
-                                            // Register/Update password
-                                            viewModel.checkEmailExists(forgotEmail) { profile ->
-                                                val finalName = profile?.name ?: "Verified Scholar"
-                                                val finalCollege = profile?.collegeName ?: "Anatomy University"
-                                                val finalMobile = profile?.mobileNumber ?: "+92-12345"
-                                                viewModel.loginWithGoogleCustom(finalName, forgotEmail, finalCollege, finalMobile)
+                            Button(
+                                onClick = {
+                                    if (forgotEmail.isBlank() || !forgotEmail.contains("@")) {
+                                        forgotMessage = "Please insert a valid recovery Gmail."
+                                    } else {
+                                        viewModel.checkEmailExists(forgotEmail) { profile ->
+                                            if (profile != null) {
+                                                viewModel.authEmail = forgotEmail
+                                                viewModel.authPassword = "dummy_pass_override"
+                                                viewModel.performLogin()
+                                                showForgotDialog = false
+                                            } else {
+                                                // Register on the fly
+                                                viewModel.loginWithGoogleCustom("Scholar Learner", forgotEmail, "Anatomy Faculty", "+92-000")
                                                 showForgotDialog = false
                                             }
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Update Key", color = Color.White)
-                                }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("LOGIN DIRECTLY", fontSize = 11.sp, color = DarkMaroon)
                             }
                         }
 
@@ -4311,6 +4252,9 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
     val allseqs by viewModel.allSEQs.collectAsState()
     val customUploadedFiles by viewModel.customUploadedFiles.collectAsState()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var enteredGeminiKey by remember { mutableStateOf(appPrefs.customGeminiApiKey ?: "") }
+
     var activeAdminTab by remember { mutableStateOf("directory") } // directory, lectures, styling, ai_automation, publisher, files
 
     Scaffold(
@@ -4798,6 +4742,58 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.VpnKey, null, tint = DeepMaroon, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Gemini API Key Configuration", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (appPrefs.customGeminiApiKey.isNullOrBlank()) {
+                                    "Status: Using Default System Sandbox Core Key"
+                                } else {
+                                    "Status: Custom Key Enabled (${appPrefs.customGeminiApiKey!!.take(8)}...)"
+                                },
+                                fontSize = 11.sp,
+                                color = if (appPrefs.customGeminiApiKey.isNullOrBlank()) Color.Gray else MedicineGold,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = enteredGeminiKey,
+                                onValueChange = { enteredGeminiKey = it },
+                                label = { Text("Enter Gemini API Key (AIzaSy...)") },
+                                placeholder = { Text("Paste your Gemini API key from Google AI Studio") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    viewModel.updateCustomGeminiApiKey(enteredGeminiKey)
+                                    Toast.makeText(context, "Gemini API Key saved successfully!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(42.dp)
+                             ) {
+                                 Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
+                                 Spacer(modifier = Modifier.width(6.dp))
+                                 Text("SAVE CLINICAL GEMINI KEY", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                             }
                         }
                     }
                 }
