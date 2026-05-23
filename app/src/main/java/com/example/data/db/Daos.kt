@@ -69,8 +69,14 @@ interface CustomMCQDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomMCQ(mcq: CustomMCQ)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomMCQs(mcqs: List<CustomMCQ>)
+
     @Query("DELETE FROM custom_mcqs WHERE id = :id")
     suspend fun deleteCustomMCQ(id: Long)
+
+    @Query("DELETE FROM custom_mcqs")
+    suspend fun clearCustomMCQs()
 }
 
 @Dao
@@ -132,8 +138,14 @@ interface CustomSEQDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomSEQ(seq: CustomSEQ)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomSEQs(seqs: List<CustomSEQ>)
+
     @Query("DELETE FROM custom_seqs WHERE id = :id")
     suspend fun deleteCustomSEQ(id: Long)
+
+    @Query("DELETE FROM custom_seqs")
+    suspend fun clearCustomSEQs()
 }
 
 @Dao
@@ -141,9 +153,18 @@ interface CustomUploadedFileDao {
     @Query("SELECT * FROM custom_uploaded_files ORDER BY uploadedAt DESC")
     fun getAllUploadedFilesFlow(): Flow<List<CustomUploadedFile>>
 
+    @Query("SELECT * FROM custom_uploaded_files")
+    suspend fun getAllUploadedFiles(): List<CustomUploadedFile>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUploadedFile(file: CustomUploadedFile)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUploadedFiles(files: List<CustomUploadedFile>)
+
     @Query("DELETE FROM custom_uploaded_files WHERE id = :id")
     suspend fun deleteUploadedFile(id: Long)
+
+    @Query("DELETE FROM custom_uploaded_files")
+    suspend fun clearUploadedFiles()
 }

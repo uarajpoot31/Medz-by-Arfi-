@@ -139,13 +139,22 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
 
     // Quiz Navigation / Play Session
     var quizState by mutableStateOf(ActiveQuizState())
+    val seenQuestionStems = mutableStateListOf<String>()
 
     init {
         viewModelScope.launch {
             repository.ensureProfileExists()
+            // High-fidelity pull of administrative sync data (uploaded files, custom MCQs/SEQs, custom API keys) from KVDB shared cloud!
+            repository.pullAllCustomData()
         }
         // Seed default chat message
         chatHistory.add(ChatMessage("ai", "Hello! I am Dr. Arfi's Smart AI Assistant. Ask me any Anatomy & Physiology questions, request customized quizzes, or seek clinical explanations!"))
+    }
+
+    fun refreshCloudData() {
+        viewModelScope.launch {
+            repository.pullAllCustomData()
+        }
     }
 
     // --- AUTH ACTIONS ---
@@ -555,12 +564,15 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
             try {
                 aiBankStatusMessage = "Formulating custom $questionType board scenarios with Gemini..."
                 
-                val systemPrompt = if (questionType == "MCQ") {
+                 val systemPrompt = if (questionType == "MCQ") {
                     """
                     You are Dr. Arfi's Senior AI Clinical Medical Professor.
                     Generate EXACTLY $count multiple-choice questions (MCQs) for senior medical board exams based on:
                     Book: $book
                     Chapter: $chapter
+                    
+                    CRITICAL CONSTRAINT: To avoid duplicates, do NOT repeat or base questions on any of the following already-posed clinical scenarios or stems:
+                    ${if (seenQuestionStems.isEmpty()) "(None yet)" else seenQuestionStems.joinToString("\n- ")}
                     
                     Return ONLY a JSON Array containing objects with these exact keys:
                     [
@@ -584,6 +596,9 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
                     Generate EXACTLY $count Structured/Short Essay Questions (SEQs) for senior medical board exams based on:
                     Book: $book
                     Chapter: $chapter
+                    
+                    CRITICAL CONSTRAINT: To avoid duplicates, do NOT repeat or base short questions on any of the following already-posed essays or questions:
+                    ${if (seenQuestionStems.isEmpty()) "(None yet)" else seenQuestionStems.joinToString("\n- ")}
                     
                     Return ONLY a JSON Array containing objects with these exact keys:
                     [
@@ -864,8 +879,14 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     // --- QUIZ GAME ENGINE ---
     fun startQuiz(mcqList: List<MedicalMCQ>, type: String, subTitle: String) {
         if (mcqList.isEmpty()) return
+        val chosenMcqs = mcqList.shuffled().take(10)
+        chosenMcqs.forEach {
+            if (!seenQuestionStems.contains(it.question)) {
+                seenQuestionStems.add(it.question)
+            }
+        }
         quizState = ActiveQuizState(
-            mcqs = mcqList.shuffled().take(10), // Take up to 10 questions
+            mcqs = chosenMcqs,
             currentIndex = 0,
             selectedOptions = emptyMap(),
             isSubmitted = false,

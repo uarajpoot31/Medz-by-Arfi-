@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import android.widget.Toast
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
@@ -218,6 +219,7 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                         )
                     )
             ) {
+                // Outer Layout tabs
                 when (viewModel.selectedTab) {
                     "dashboard" -> DashboardTab(viewModel)
                     "study" -> StudyTab(viewModel)
@@ -229,6 +231,61 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                     "admin" -> AdminTab(viewModel)
                     "profile" -> ProfileTab(viewModel)
                     else -> DashboardTab(viewModel)
+                }
+
+                // WhatsApp Support Floating Action Badge (03246767582 Contact)
+                val context = androidx.compose.ui.platform.LocalContext.current
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 16.dp, end = 16.dp)
+                        .testTag("whatsapp_support_button")
+                ) {
+                    IconButton(
+                        onClick = {
+                            val phoneNumber = "923246767582"
+                            val message = "Assalamualaikum sir! I need help about Medz With Arfi."
+                            try {
+                                val encodedMsg = java.net.URLEncoder.encode(message, "UTF-8")
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                    data = android.net.Uri.parse("https://api.whatsapp.com/send?phone=$phoneNumber&text=$encodedMsg")
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                val encodedMsg = java.net.URLEncoder.encode(message, "UTF-8")
+                                val fallbackIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                    data = android.net.Uri.parse("https://web.whatsapp.com/send?phone=$phoneNumber&text=$encodedMsg")
+                                }
+                                context.startActivity(fallbackIntent)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(52.dp)
+                            .shadow(6.dp, RoundedCornerShape(26.dp))
+                            .background(Color(0xFF25D366), RoundedCornerShape(26.dp))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Chat,
+                            contentDescription = "WhatsApp Admin Support",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // Green online bubble badge indicator
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(14.dp)
+                            .background(Color.White, RoundedCornerShape(7.dp))
+                            .padding(2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xFF4CAF50), RoundedCornerShape(5.dp))
+                        )
+                    }
                 }
             }
         }
@@ -1069,109 +1126,221 @@ fun VideosTab(viewModel: MedicalViewModel) {
         }
     }
 
-    // Classroom Video Player inside dashboard
+    // Classroom Video Player inside dashboard with Fullscreen & Screen Rotation control
     if (videoToPlay != null) {
         val video = videoToPlay!!
-        Dialog(onDismissRequest = { videoToPlay = null }) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.85f),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Black)
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF1E1E1E))
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = video.title,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = { videoToPlay = null }) {
-                            Icon(Icons.Default.Close, null, tint = Color.White)
-                        }
-                    }
+        var isFullScreen by remember { mutableStateOf(false) }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val activity = context as? android.app.Activity
 
-                    // Actual Embedded Youtube WebView Component
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .background(Color.DarkGray),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AndroidView(
-                            factory = { context ->
-                                android.webkit.WebView(context).apply {
-                                    webViewClient = android.webkit.WebViewClient()
-                                    webChromeClient = android.webkit.WebChromeClient()
-                                    settings.javaScriptEnabled = true
-                                    settings.loadWithOverviewMode = true
-                                    settings.useWideViewPort = true
-                                    loadUrl(video.videoUrl)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+        LaunchedEffect(isFullScreen) {
+            if (isFullScreen) {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
 
-                    // Interactive Lesson Explainer & Note pad
-                    Column(
+        DisposableEffect(Unit) {
+            onDispose {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+
+        Dialog(
+            onDismissRequest = { 
+                videoToPlay = null 
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = !isFullScreen
+            )
+        ) {
+            if (isFullScreen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            android.webkit.WebView(ctx).apply {
+                                webViewClient = android.webkit.WebViewClient()
+                                webChromeClient = android.webkit.WebChromeClient()
+                                settings.javaScriptEnabled = true
+                                settings.loadWithOverviewMode = true
+                                settings.useWideViewPort = true
+                                loadUrl(video.videoUrl)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Exit Full Screen Trigger overlay
+                    IconButton(
+                        onClick = { isFullScreen = false },
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .background(LightCream)
+                            .align(Alignment.TopEnd)
                             .padding(16.dp)
-                            .verticalScroll(rememberScrollState())
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                            .size(40.dp)
                     ) {
-                        Text(
-                            text = "Reference Medical Lesson: ${video.bookSource} (${video.chapterName})",
-                            fontWeight = FontWeight.Bold,
-                            color = DeepMaroon,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = "Reference Duration: ${video.duration}",
-                            fontSize = 10.sp,
-                            color = Color.Gray,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Clinical Overview:",
-                            fontWeight = FontWeight.Bold,
-                            color = DarkMaroon,
-                            fontSize = 11.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = video.description,
-                            fontSize = 11.sp,
-                            color = Color.DarkGray
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Exit Fullscreen",
+                            tint = Color.White
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = { videoToPlay = null },
-                        colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                    // Rotate Back overlay on the bottom right
+                    IconButton(
+                        onClick = { isFullScreen = false },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        shape = RoundedCornerShape(8.dp)
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                            .size(40.dp)
                     ) {
-                        Text("DONE - RETURN TO THEATRE", color = DarkMaroon, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = Icons.Default.ScreenRotation,
+                            contentDescription = "Portrait Mode",
+                            tint = Color.White
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.85f),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E1E1E))
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = video.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { videoToPlay = null }) {
+                                Icon(Icons.Default.Close, null, tint = Color.White)
+                            }
+                        }
+
+                        // Actual Embedded Youtube WebView Component with Fullscreen button
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .background(Color.DarkGray),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    android.webkit.WebView(ctx).apply {
+                                        webViewClient = android.webkit.WebViewClient()
+                                        webChromeClient = android.webkit.WebChromeClient()
+                                        settings.javaScriptEnabled = true
+                                        settings.loadWithOverviewMode = true
+                                        settings.useWideViewPort = true
+                                        loadUrl(video.videoUrl)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // Rotate / Fullscreen Button at bottom end of the video view
+                            IconButton(
+                                onClick = { isFullScreen = true },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                    .size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AspectRatio,
+                                    contentDescription = "Rotate & Full Screen",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Interactive Lesson Explainer & Note pad
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .background(LightCream)
+                                .padding(16.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = "Reference Medical Lesson: ${video.bookSource} (${video.chapterName})",
+                                fontWeight = FontWeight.Bold,
+                                color = DeepMaroon,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Reference Duration: ${video.duration}",
+                                fontSize = 10.sp,
+                                color = Color.Gray,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Clinical Overview:",
+                                fontWeight = FontWeight.Bold,
+                                color = DarkMaroon,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = video.description,
+                                fontSize = 11.sp,
+                                color = Color.DarkGray
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { isFullScreen = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.ScreenRotation, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("ROTATE FULL SCREEN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { videoToPlay = null },
+                                colors = ButtonDefaults.buttonColors(containerColor = MedicineGold),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("RETURN TO THEATRE", color = DarkMaroon, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
@@ -2301,92 +2470,206 @@ fun StudyTab(viewModel: MedicalViewModel) {
         }
     }
 
-    // HIGH FIDELITY IN-APP INTERACTIVE CLASSROOM WEB PLAYER
+    // HIGH FIDELITY IN-APP INTERACTIVE CLASSROOM WEB PLAYER with Fullscreen & Screen Rotation control
     if (videoToPlay != null) {
         val video = videoToPlay!!
-        Dialog(onDismissRequest = { videoToPlay = null }) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.85f),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Black)
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF1E1E1E))
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = video.title,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = { videoToPlay = null }) {
-                            Icon(Icons.Default.Close, null, tint = Color.White)
-                        }
-                    }
+        var isFullScreen by remember { mutableStateOf(false) }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val activity = context as? android.app.Activity
 
-                    // Actual Embedded Youtube WebView Component
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .background(Color.DarkGray),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // Web Player with JavaScript, load YouTube iframe EMBED Url beautifully!
-                        AndroidView(
-                            factory = { context ->
-                                android.webkit.WebView(context).apply {
-                                    webViewClient = android.webkit.WebViewClient()
-                                    webChromeClient = android.webkit.WebChromeClient()
-                                    settings.javaScriptEnabled = true
-                                    settings.loadWithOverviewMode = true
-                                    settings.useWideViewPort = true
-                                    loadUrl(video.videoUrl)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+        LaunchedEffect(isFullScreen) {
+            if (isFullScreen) {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
 
-                    // Video Tutorial Interactive Study Notes Pane
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(Color.White)
-                            .padding(16.dp)
-                    ) {
-                        Text("Anatomy & Physiology Live Annotations", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
-                        Text(
-                            text = "Reference Medical Lesson: ${video.bookSource} (${video.chapterName})",
-                            fontSize = 11.sp,
-                            color = Color.Gray
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        
-                        Divider()
-                        
-                        Spacer(modifier = Modifier.height(10.dp))
-                        
-                        LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
-                                Text("💡 Core Concept Overview", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 12.sp)
-                                Text(video.description, fontSize = 11.sp, color = Color.DarkGray)
+        DisposableEffect(Unit) {
+            onDispose {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+
+        Dialog(
+            onDismissRequest = { 
+                videoToPlay = null 
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = !isFullScreen
+            )
+        ) {
+            if (isFullScreen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            android.webkit.WebView(ctx).apply {
+                                webViewClient = android.webkit.WebViewClient()
+                                webChromeClient = android.webkit.WebChromeClient()
+                                settings.javaScriptEnabled = true
+                                settings.loadWithOverviewMode = true
+                                settings.useWideViewPort = true
+                                loadUrl(video.videoUrl)
                             }
-                            item {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text("🎓 Study Tips & Boards High-Yields", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 12.sp)
-                                Text("1. Be sure to trace the anatomical roots and systemic feedback processes physically using clinical models.\n2. Boards frequently test the exact embryological and cellular functional origins mapped in these visual tutorials.", fontSize = 11.sp, color = Color.DarkGray)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Exit Full Screen Trigger overlay
+                    IconButton(
+                        onClick = { isFullScreen = false },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                            .size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Exit Fullscreen",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Rotate Back overlay on the bottom right
+                    IconButton(
+                        onClick = { isFullScreen = false },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                            .size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ScreenRotation,
+                            contentDescription = "Portrait Mode",
+                            tint = Color.White
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.85f),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E1E1E))
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = video.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { videoToPlay = null }) {
+                                Icon(Icons.Default.Close, null, tint = Color.White)
+                            }
+                        }
+
+                        // Actual Embedded Youtube WebView Component with Fullscreen button
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .background(Color.DarkGray),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    android.webkit.WebView(ctx).apply {
+                                        webViewClient = android.webkit.WebViewClient()
+                                        webChromeClient = android.webkit.WebChromeClient()
+                                        settings.javaScriptEnabled = true
+                                        settings.loadWithOverviewMode = true
+                                        settings.useWideViewPort = true
+                                        loadUrl(video.videoUrl)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // Rotate / Fullscreen Button at bottom end of the video view
+                            IconButton(
+                                onClick = { isFullScreen = true },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                    .size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AspectRatio,
+                                    contentDescription = "Rotate & Full Screen",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Video Tutorial Interactive Study Notes Pane
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color.White)
+                                .padding(16.dp)
+                        ) {
+                            Text("Anatomy & Physiology Live Annotations", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                            Text(
+                                text = "Reference Medical Lesson: ${video.bookSource} (${video.chapterName})",
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            Divider()
+                            
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { isFullScreen = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.ScreenRotation, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("ROTATE FULL SCREEN", fontSize = 11.sp)
+                                }
+                            }
+
+                            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                item {
+                                    Text("💡 Core Concept Overview", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 12.sp)
+                                    Text(video.description, fontSize = 11.sp, color = Color.DarkGray)
+                                }
+                                item {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("🎓 Study Tips & Boards High-Yields", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 12.sp)
+                                    Text("1. Be sure to trace the anatomical roots and systemic feedback processes physically using clinical models.\n2. Boards frequently test the exact embryological and cellular functional origins mapped in these visual tutorials.", fontSize = 11.sp, color = Color.DarkGray)
+                                }
                             }
                         }
                     }

@@ -185,44 +185,53 @@ class MedicalRepository(private val context: Context) {
 
     suspend fun addCustomMCQ(mcq: CustomMCQ) = withContext(Dispatchers.IO) {
         customMCQDao.insertCustomMCQ(mcq)
+        pushAllCustomData()
     }
 
     suspend fun deleteCustomMCQ(id: Long) = withContext(Dispatchers.IO) {
         customMCQDao.deleteCustomMCQ(id)
+        pushAllCustomData()
     }
 
     suspend fun deleteCustomMCQByIdString(mcqIdString: String) = withContext(Dispatchers.IO) {
         if (mcqIdString.startsWith("cus_")) {
             val numericId = mcqIdString.substringAfter("cus_").toLongOrNull() ?: 0L
             customMCQDao.deleteCustomMCQ(numericId)
+            pushAllCustomData()
         }
     }
 
     suspend fun addCustomSEQ(seq: CustomSEQ) = withContext(Dispatchers.IO) {
         customSEQDao.insertCustomSEQ(seq)
+        pushAllCustomData()
     }
 
     suspend fun deleteCustomSEQ(id: Long) = withContext(Dispatchers.IO) {
         customSEQDao.deleteCustomSEQ(id)
+        pushAllCustomData()
     }
 
     suspend fun deleteCustomSEQByIdString(seqIdString: String) = withContext(Dispatchers.IO) {
         if (seqIdString.startsWith("cus_")) {
             val numericId = seqIdString.substringAfter("cus_").toLongOrNull() ?: 0L
             customSEQDao.deleteCustomSEQ(numericId)
+            pushAllCustomData()
         }
     }
 
     suspend fun updateAppPreferences(prefs: AppPreferences) = withContext(Dispatchers.IO) {
         appPreferencesDao.insertAppPreferences(prefs)
+        pushAllCustomData()
     }
 
     suspend fun addCustomUploadedFile(file: CustomUploadedFile) = withContext(Dispatchers.IO) {
         customUploadedFileDao.insertUploadedFile(file)
+        pushAllCustomData()
     }
 
     suspend fun deleteCustomUploadedFile(id: Long) = withContext(Dispatchers.IO) {
         customUploadedFileDao.deleteUploadedFile(id)
+        pushAllCustomData()
     }
 
     suspend fun addVideoLecture(lecture: VideoLecture) = withContext(Dispatchers.IO) {
@@ -372,6 +381,134 @@ class MedicalRepository(private val context: Context) {
         }
 
         SearchResults(matchedMCQs, matchedShortQs, aiExplanation)
+    }
+
+    // --- SHARED CLOUD SYNCHRONIZATION WITH KVDB.IO ---
+    private val customFilesListAdapter by lazy {
+        moshi.adapter<List<CustomUploadedFile>>(
+            com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomUploadedFile::class.java)
+        )
+    }
+    private val customMCQListAdapter by lazy {
+        moshi.adapter<List<CustomMCQ>>(
+            com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomMCQ::class.java)
+        )
+    }
+    private val customSEQListAdapter by lazy {
+        moshi.adapter<List<CustomSEQ>>(
+            com.squareup.moshi.Types.newParameterizedType(List::class.java, CustomSEQ::class.java)
+        )
+    }
+
+    suspend fun pushAllCustomData() = withContext(Dispatchers.IO) {
+        try {
+            // Push Files
+            val filesList = customUploadedFileDao.getAllUploadedFiles()
+            val filesJson = customFilesListAdapter.toJson(filesList)
+            val req1 = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/files")
+                .put(filesJson.toRequestBody("application/json".toMediaType()))
+                .build()
+            okHttpClient.newCall(req1).execute().close()
+
+            // Push MCQs
+            val mcqsList = customMCQDao.getAllCustomMCQs()
+            val mcqsJson = customMCQListAdapter.toJson(mcqsList)
+            val req2 = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/mcqs")
+                .put(mcqsJson.toRequestBody("application/json".toMediaType()))
+                .build()
+            okHttpClient.newCall(req2).execute().close()
+
+            // Push SEQs
+            val seqsList = customSEQDao.getAllCustomSEQs()
+            val seqsJson = customSEQListAdapter.toJson(seqsList)
+            val req3 = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/seqs")
+                .put(seqsJson.toRequestBody("application/json".toMediaType()))
+                .build()
+            okHttpClient.newCall(req3).execute().close()
+
+            // Push API Key
+            val appPref = appPreferencesDao.getAppPreferences() ?: AppPreferences()
+            val apiKey = appPref.customGeminiApiKey ?: ""
+            val req4 = Request.Builder()
+                .url("https://kvdb.io/pk_medzwitharfi_v817/apikey")
+                .put(apiKey.toRequestBody("text/plain".toMediaType()))
+                .build()
+            okHttpClient.newCall(req4).execute().close()
+
+            Log.d("SyncCloud", "Successfully pushed all data to cloud.")
+        } catch (e: Exception) {
+            Log.e("SyncCloud", "Failed to push and write cloud data: ", e)
+        }
+    }
+
+    suspend fun pullAllCustomData() = withContext(Dispatchers.IO) {
+        try {
+            // Pull Files
+            val req1 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/files").get().build()
+            okHttpClient.newCall(req1).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "not found") {
+                        val files = customFilesListAdapter.fromJson(body)
+                        if (files != null) {
+                            customUploadedFileDao.clearUploadedFiles()
+                            customUploadedFileDao.insertUploadedFiles(files)
+                        }
+                    }
+                }
+            }
+
+            // Pull MCQs
+            val req2 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/mcqs").get().build()
+            okHttpClient.newCall(req2).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "not found") {
+                        val mcqs = customMCQListAdapter.fromJson(body)
+                        if (mcqs != null) {
+                            customMCQDao.clearCustomMCQs()
+                            customMCQDao.insertCustomMCQs(mcqs)
+                        }
+                    }
+                }
+            }
+
+            // Pull SEQs
+            val req3 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/seqs").get().build()
+            okHttpClient.newCall(req3).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "not found") {
+                        val seqs = customSEQListAdapter.fromJson(body)
+                        if (seqs != null) {
+                            customSEQDao.clearCustomSEQs()
+                            customSEQDao.insertCustomSEQs(seqs)
+                        }
+                    }
+                }
+            }
+
+            // Pull API Key
+            val req4 = Request.Builder().url("https://kvdb.io/pk_medzwitharfi_v817/apikey").get().build()
+            okHttpClient.newCall(req4).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "not found") {
+                        val existingPref = appPreferencesDao.getAppPreferences() ?: AppPreferences()
+                        if (existingPref.customGeminiApiKey != body) {
+                            appPreferencesDao.insertAppPreferences(existingPref.copy(customGeminiApiKey = body))
+                        }
+                    }
+                }
+            }
+
+            Log.d("SyncCloud", "Successfully synced and downloaded cloud data.")
+        } catch (e: Exception) {
+            Log.e("SyncCloud", "Failed to pull cloud sync data: ", e)
+        }
     }
 }
 
