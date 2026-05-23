@@ -6,17 +6,56 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UserProfileDao {
+    @Query("SELECT * FROM user_profile ORDER BY lastActiveTime DESC")
+    fun getAllProfilesFlow(): Flow<List<UserProfile>>
+
+    @Query("SELECT * FROM user_profile ORDER BY lastActiveTime DESC")
+    suspend fun getAllProfiles(): List<UserProfile>
+
     @Query("SELECT * FROM user_profile LIMIT 1")
     fun getUserProfileFlow(): Flow<UserProfile?>
 
     @Query("SELECT * FROM user_profile LIMIT 1")
     suspend fun getUserProfile(): UserProfile?
 
+    @Query("SELECT * FROM user_profile WHERE email = :email LIMIT 1")
+    fun getProfileByEmailFlow(email: String): Flow<UserProfile?>
+
+    @Query("SELECT * FROM user_profile WHERE email = :email LIMIT 1")
+    suspend fun getProfileByEmail(email: String): UserProfile?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: UserProfile)
 
     @Update
     suspend fun updateProfile(profile: UserProfile)
+}
+
+@Dao
+interface VideoLectureDao {
+    @Query("SELECT * FROM video_lectures ORDER BY id DESC")
+    fun getAllVideoLecturesFlow(): Flow<List<VideoLecture>>
+
+    @Query("SELECT * FROM video_lectures WHERE bookSource = :book AND chapterName = :chapter ORDER BY id DESC")
+    fun getVideoLecturesForChapterFlow(book: String, chapter: String): Flow<List<VideoLecture>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVideoLecture(lecture: VideoLecture)
+
+    @Query("DELETE FROM video_lectures WHERE id = :id")
+    suspend fun deleteVideoLecture(id: Long)
+}
+
+@Dao
+interface AppPreferencesDao {
+    @Query("SELECT * FROM app_preferences WHERE id = 'singleton_pref' LIMIT 1")
+    fun getAppPreferencesFlow(): Flow<AppPreferences?>
+
+    @Query("SELECT * FROM app_preferences WHERE id = 'singleton_pref' LIMIT 1")
+    suspend fun getAppPreferences(): AppPreferences?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAppPreferences(prefs: AppPreferences)
 }
 
 @Dao
@@ -80,4 +119,31 @@ interface BookmarkedMCQDao {
 
     @Query("DELETE FROM bookmarked_mcqs WHERE mcqId = :id")
     suspend fun removeBookmark(id: String)
+}
+
+@Dao
+interface CustomSEQDao {
+    @Query("SELECT * FROM custom_seqs ORDER BY id DESC")
+    fun getAllCustomSEQsFlow(): Flow<List<CustomSEQ>>
+
+    @Query("SELECT * FROM custom_seqs")
+    suspend fun getAllCustomSEQs(): List<CustomSEQ>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomSEQ(seq: CustomSEQ)
+
+    @Query("DELETE FROM custom_seqs WHERE id = :id")
+    suspend fun deleteCustomSEQ(id: Long)
+}
+
+@Dao
+interface CustomUploadedFileDao {
+    @Query("SELECT * FROM custom_uploaded_files ORDER BY uploadedAt DESC")
+    fun getAllUploadedFilesFlow(): Flow<List<CustomUploadedFile>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUploadedFile(file: CustomUploadedFile)
+
+    @Query("DELETE FROM custom_uploaded_files WHERE id = :id")
+    suspend fun deleteUploadedFile(id: Long)
 }

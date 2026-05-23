@@ -10,20 +10,28 @@ import com.example.data.model.*
     entities = [
         UserProfile::class,
         CustomMCQ::class,
+        CustomSEQ::class,
         QuizScore::class,
         Note::class,
-        BookmarkedMCQ::class
+        BookmarkedMCQ::class,
+        VideoLecture::class,
+        AppPreferences::class,
+        CustomUploadedFile::class
     ],
-    version = 1,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun userProfileDao(): UserProfileDao
     abstract fun customMCQDao(): CustomMCQDao
+    abstract fun customSEQDao(): CustomSEQDao
+    abstract fun customUploadedFileDao(): CustomUploadedFileDao
     abstract fun quizScoreDao(): QuizScoreDao
     abstract fun noteDao(): NoteDao
     abstract fun bookmarkedMCQDao(): BookmarkedMCQDao
+    abstract fun videoLectureDao(): VideoLectureDao
+    abstract fun appPreferencesDao(): AppPreferencesDao
 
     companion object {
         @Volatile

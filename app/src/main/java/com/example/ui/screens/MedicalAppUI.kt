@@ -26,17 +26,90 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.*
+import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import androidx.activity.compose.rememberLauncherForActivityResult
+
+fun getLogoIcon(iconName: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (iconName) {
+        "LocalHospital" -> Icons.Default.LocalHospital
+        "Favorite" -> Icons.Default.Favorite
+        "Medication" -> Icons.Default.Medication
+        "Healing" -> Icons.Default.Healing
+        else -> Icons.Default.MedicalServices
+    }
+}
+
+fun getLogoBgColor(hexString: String): Color {
+    return try {
+        Color(android.graphics.Color.parseColor(hexString))
+    } catch (e: Exception) {
+        Color(0xFF8E1439) // Fallback deep maroon
+    }
+}
+
+fun copyUriToLocalFile(context: android.content.Context, uri: android.net.Uri, label: String): String? {
+    return try {
+        val contentResolver = context.contentResolver
+        val cursor = contentResolver.query(uri, null, null, null, null)
+        var displayName = "file_${System.currentTimeMillis()}"
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    displayName = it.getString(nameIndex)
+                }
+            }
+        }
+        val cleanName = displayName.replace(" ", "_").replace("[^a-zA-Z0-9._-]", "")
+        val localFile = java.io.File(context.filesDir, "up_${label}_${System.currentTimeMillis()}_$cleanName")
+        contentResolver.openInputStream(uri)?.use { input ->
+            java.io.FileOutputStream(localFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+        localFile.absolutePath
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+@Composable
+fun AppLogoView(appPrefs: AppPreferences, modifier: Modifier = Modifier.size(20.dp), tint: Color = MedicineGold) {
+    val customUri = appPrefs.customLogoUri
+    if (!customUri.isNullOrEmpty()) {
+        AsyncImage(
+            model = customUri,
+            contentDescription = "App Custom Logo",
+            modifier = modifier.clip(RoundedCornerShape(4.dp)),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        )
+    } else {
+        Icon(
+            imageVector = getLogoIcon(appPrefs.logoIconName),
+            contentDescription = "App Built-in Logo",
+            tint = tint,
+            modifier = modifier
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MedicalAppUI(viewModel: MedicalViewModel) {
     val isLoggedIn = viewModel.isLoggedIn
+    val isAdminLoggedIn = viewModel.isAdminLoggedIn
+    val appPrefs by viewModel.appPreferences.collectAsState()
 
     if (!isLoggedIn) {
         AuthScreen(viewModel)
+    } else if (isAdminLoggedIn) {
+        AdminSystemScreen(viewModel)
     } else {
         val userProfile by viewModel.userProfile.collectAsState()
         val currentTab = viewModel.selectedTab
@@ -46,15 +119,18 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.MedicalServices,
-                                contentDescription = null,
-                                tint = MedicineGold,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(getLogoBgColor(appPrefs.logoBgColorHex)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AppLogoView(appPrefs = appPrefs, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "Medz with Arfi",
+                                text = appPrefs.appName,
                                 color = WarmWhite,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Serif
@@ -67,13 +143,6 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
                                 imageVector = Icons.Default.AccountCircle,
                                 contentDescription = "Profile",
                                 tint = WarmWhite
-                            )
-                        }
-                        IconButton(onClick = { viewModel.selectedTab = "admin" }) {
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = "Admin Portal",
-                                tint = MedicineGold
                             )
                         }
                     },
@@ -161,8 +230,13 @@ fun AuthScreen(viewModel: MedicalViewModel) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var collegeName by remember { mutableStateOf("") }
+    var mobileNumber by remember { mutableStateOf("") }
     val isSignUp = viewModel.isSignUpMode
     val error = viewModel.authError
+    val appPrefs by viewModel.appPreferences.collectAsState()
+
+    var showGoogleDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -181,26 +255,21 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Heart/Medical Crest Icon
+            // Heart/Medical Crest Icon (Dynamic)
             Box(
                 modifier = Modifier
                     .size(100.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Color(0xFF8E1439)),
+                    .background(getLogoBgColor(appPrefs.logoBgColorHex)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.MedicalServices,
-                    contentDescription = "Medical Services",
-                    tint = MedicineGold,
-                    modifier = Modifier.size(54.dp)
-                )
+                AppLogoView(appPrefs = appPrefs, modifier = Modifier.size(54.dp))
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Medz with Arfi",
+                text = appPrefs.appName,
                 color = WarmWhite,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
@@ -247,12 +316,34 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = collegeName,
+                            onValueChange = { collegeName = it; viewModel.authCollegeName = it },
+                            label = { Text("College / University Name") },
+                            leadingIcon = { Icon(Icons.Default.Book, contentDescription = null, tint = DeepMaroon) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("auth_college_input"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = mobileNumber,
+                            onValueChange = { mobileNumber = it; viewModel.authMobileNumber = it },
+                            label = { Text("Mobile Number") },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = DeepMaroon) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("auth_mobile_input"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
 
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it; viewModel.authEmail = it },
-                        label = { Text("Medical Email") },
+                        label = { Text("Medical Email / Admin Username") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = DeepMaroon) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("auth_email_input"),
@@ -322,13 +413,13 @@ fun AuthScreen(viewModel: MedicalViewModel) {
 
                     // OAuth Google integration support demo
                     OutlinedButton(
-                        onClick = { viewModel.loginWithGoogle() },
+                        onClick = { showGoogleDialog = true },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.DarkGray),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Sign In with Gmail", fontWeight = FontWeight.SemiBold)
+                            Text("Sign In with Gmail (Google Login)", fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -351,6 +442,95 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom Simulated Google Login Dialog Dialog
+        if (showGoogleDialog) {
+            var gName by remember { mutableStateOf("") }
+            var gEmail by remember { mutableStateOf("") }
+            var gCollege by remember { mutableStateOf("") }
+            var gMobile by remember { mutableStateOf("") }
+            var gError by remember { mutableStateOf<String?>(null) }
+
+            Dialog(onDismissRequest = { showGoogleDialog = false }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.AccountBalance, null, tint = DeepMaroon, modifier = Modifier.size(40.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Google Accounts Verification", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 16.sp)
+                        Text("Authorize using secure federated credentials", fontSize = 11.sp, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = gName,
+                            onValueChange = { gName = it },
+                            label = { Text("Student Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = gEmail,
+                            onValueChange = { gEmail = it },
+                            label = { Text("Gmail Address") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = gCollege,
+                            onValueChange = { gCollege = it },
+                            label = { Text("Medical College / University") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = gMobile,
+                            onValueChange = { gMobile = it },
+                            label = { Text("Mobile Number") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (gError != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(gError!!, color = CoralRed, fontSize = 11.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            TextButton(onClick = { showGoogleDialog = false }) {
+                                Text("CANCEL", color = Color.Gray)
+                            }
+                            Button(
+                                onClick = {
+                                    if (gName.isBlank() || gEmail.isBlank() || gCollege.isBlank() || gMobile.isBlank()) {
+                                        gError = "Please fill in all Google Profile details."
+                                    } else {
+                                        showGoogleDialog = false
+                                        viewModel.loginWithGoogleCustom(gName, gEmail, gCollege, gMobile)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon)
+                            ) {
+                                Text("AUTHORIZE")
+                            }
                         }
                     }
                 }
@@ -1046,7 +1226,14 @@ fun DashboardTab(viewModel: MedicalViewModel) {
 @Composable
 fun StudyTab(viewModel: MedicalViewModel) {
     val allMcqs by viewModel.allMCQs.collectAsState()
+    val allVideoLectures by viewModel.allVideoLectures.collectAsState()
+    val customUploadedFiles by viewModel.customUploadedFiles.collectAsState()
     var selectedBook by remember { mutableStateOf<String?>(null) } // null showing choices, otherwise chapters list
+    var activePreviewImage by remember { mutableStateOf<String?>(null) }
+
+    var activeChapterForVideos by remember { mutableStateOf<String?>(null) }
+    var activeBookForVideos by remember { mutableStateOf<String?>(null) }
+    var videoToPlay by remember { mutableStateOf<VideoLecture?>(null) }
 
     Column(
         modifier = Modifier
@@ -1054,18 +1241,23 @@ fun StudyTab(viewModel: MedicalViewModel) {
             .padding(16.dp)
     ) {
         if (selectedBook == null) {
-            Text(
-                text = "Select Medical Library",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = DeepMaroon,
-                fontFamily = FontFamily.Serif
-            )
-            Text(
-                text = "Review standard curriculum chapters and practice board-style MCQs recursively.",
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "Select Medical Library",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = DeepMaroon,
+                    fontFamily = FontFamily.Serif
+                )
+                Text(
+                    text = "Review standard curriculum chapters and practice board-style MCQs recursively.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -1180,6 +1372,94 @@ fun StudyTab(viewModel: MedicalViewModel) {
                 }
             }
 
+            if (customUploadedFiles.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Clinical Handouts & Visual Guides",
+                    fontWeight = FontWeight.Bold,
+                    color = DeepMaroon,
+                    fontSize = 15.sp,
+                    fontFamily = FontFamily.Serif
+                )
+                Text(
+                    text = "Supplementary high-yield materials uploaded from Arfi's clinical vault.",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                customUploadedFiles.forEach { ufield ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                if (ufield.fileType == "image") {
+                                    activePreviewImage = ufield.fileUri
+                                }
+                            },
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(45.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(LightCream),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (ufield.fileType == "image") {
+                                    AsyncImage(
+                                        model = ufield.fileUri,
+                                        contentDescription = ufield.fileName,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    val icon = when (ufield.fileType) {
+                                        "pdf" -> Icons.Default.PictureAsPdf
+                                        else -> Icons.Default.InsertDriveFile
+                                    }
+                                    Icon(icon, null, tint = DeepMaroon, modifier = Modifier.size(24.dp))
+                                }
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = ufield.fileName,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DarkMaroon,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = "Category: ${ufield.fileType.uppercase()} | Size: ${ufield.fileSize}",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+
+                            if (ufield.fileType == "image") {
+                                Icon(
+                                    imageVector = Icons.Default.ZoomIn,
+                                    contentDescription = "Zoom In",
+                                    tint = MedicineGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            } // Closing column wrapper
         } else {
             // Book chapters view list
             val bookName = selectedBook!!
@@ -1249,14 +1529,25 @@ fun StudyTab(viewModel: MedicalViewModel) {
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 TextButton(
-                                    onClick = { viewModel.askAiAboutTopic("$bookName chapter $chapter") }
+                                    onClick = { viewModel.askAiAboutTopic("$bookName chapter $chapter") },
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(Icons.Default.AutoAwesome, "AI", modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("AI Briefing", fontSize = 12.sp)
+                                    Icon(Icons.Default.AutoAwesome, "AI", modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("AI Brief", fontSize = 11.sp)
+                                }
+
+                                TextButton(
+                                    onClick = { activeChapterForVideos = chapter; activeBookForVideos = bookName },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.PlayCircle, "Video", modifier = Modifier.size(13.dp), tint = MedicineGold)
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("Lectures", fontSize = 11.sp, color = DeepMaroon)
                                 }
 
                                 Button(
@@ -1268,12 +1559,252 @@ fun StudyTab(viewModel: MedicalViewModel) {
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.testTag("start_quiz_$chapter")
+                                    modifier = Modifier.weight(1.2f).testTag("start_quiz_$chapter"),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                                 ) {
-                                    Text("Start Quiz", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Start Quiz", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // LIST VIDEO LECTURES DIALOG FOR SELECTED CHAPTER
+    if (activeChapterForVideos != null && activeBookForVideos != null) {
+        val chapter = activeChapterForVideos!!
+        val book = activeBookForVideos!!
+        val filteredLectures = allVideoLectures.filter { 
+            it.bookSource.lowercase().contains(book.lowercase().take(10)) && 
+            it.chapterName.lowercase() == chapter.lowercase()
+        }
+
+        Dialog(onDismissRequest = { activeChapterForVideos = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.75f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(chapter, fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 16.sp)
+                            Text("Topic video tutorials and medical explanations", fontSize = 11.sp, color = Color.Gray)
+                        }
+                        IconButton(onClick = { activeChapterForVideos = null }) {
+                            Icon(Icons.Default.Close, null, tint = DeepMaroon)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (filteredLectures.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.VideoCall, null, tint = Color.LightGray, modifier = Modifier.size(54.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("No video lectures compiled yet for this topic.", fontSize = 13.sp, color = Color.Gray)
+                                Text("Ask usamaarfi (Admin) to include some!", fontSize = 11.sp, color = Color.LightGray)
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(filteredLectures) { video ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = LightCream),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(video.title, fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(video.duration, fontSize = 11.sp, color = MedicineGold, fontWeight = FontWeight.Bold)
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(video.description, fontSize = 11.sp, color = Color.DarkGray)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Button(
+                                            onClick = { videoToPlay = video },
+                                            colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                            shape = RoundedCornerShape(6.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Play Interactive Tutorial", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // HIGH FIDELITY IN-APP INTERACTIVE CLASSROOM WEB PLAYER
+    if (videoToPlay != null) {
+        val video = videoToPlay!!
+        Dialog(onDismissRequest = { videoToPlay = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E1E1E))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = video.title,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { videoToPlay = null }) {
+                            Icon(Icons.Default.Close, null, tint = Color.White)
+                        }
+                    }
+
+                    // Actual Embedded Youtube WebView Component
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .background(Color.DarkGray),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Web Player with JavaScript, load YouTube iframe EMBED Url beautifully!
+                        AndroidView(
+                            factory = { context ->
+                                android.webkit.WebView(context).apply {
+                                    webViewClient = android.webkit.WebViewClient()
+                                    webChromeClient = android.webkit.WebChromeClient()
+                                    settings.javaScriptEnabled = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    loadUrl(video.videoUrl)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Video Tutorial Interactive Study Notes Pane
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color.White)
+                            .padding(16.dp)
+                    ) {
+                        Text("Anatomy & Physiology Live Annotations", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                        Text(
+                            text = "Reference Medical Lesson: ${video.bookSource} (${video.chapterName})",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
+                        Divider()
+                        
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
+                        LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            item {
+                                Text("💡 Core Concept Overview", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 12.sp)
+                                Text(video.description, fontSize = 11.sp, color = Color.DarkGray)
+                            }
+                            item {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("🎓 Study Tips & Boards High-Yields", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 12.sp)
+                                Text("1. Be sure to trace the anatomical roots and systemic feedback processes physically using clinical models.\n2. Boards frequently test the exact embryological and cellular functional origins mapped in these visual tutorials.", fontSize = 11.sp, color = Color.DarkGray)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (activePreviewImage != null) {
+        Dialog(onDismissRequest = { activePreviewImage = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.65f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Anatomical Reference Chart", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 15.sp)
+                        IconButton(onClick = { activePreviewImage = null }) {
+                            Icon(Icons.Default.Close, "Close")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(LightCream),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = activePreviewImage!!,
+                            contentDescription = "Expanded Diagram Preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = { activePreviewImage = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("DONE")
                     }
                 }
             }
@@ -2494,6 +3025,18 @@ fun ProfileTab(viewModel: MedicalViewModel) {
             fontSize = 12.sp,
             color = Color.Gray
         )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "College: ${profile.collegeName}",
+            fontSize = 12.sp,
+            color = DarkMaroon,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = "Mobile: ${profile.mobileNumber}",
+            fontSize = 12.sp,
+            color = Color.Gray
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -2561,6 +3104,1206 @@ fun ProfileTab(viewModel: MedicalViewModel) {
             modifier = Modifier.fillMaxWidth().height(48.dp).testTag("sign_out_button")
         ) {
             Text("SECURE DE-AUTHORIZE / DISCONNECT", fontWeight = FontWeight.Bold, color = Color.White)
+        }
+    }
+}
+
+// ==================== ADVANCED SECURE ADMIN SYSTEM SYSTEM ====================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminSystemScreen(viewModel: MedicalViewModel) {
+    val allProfiles by viewModel.allProfiles.collectAsState()
+    val allLectures by viewModel.allVideoLectures.collectAsState()
+    val appPrefs by viewModel.appPreferences.collectAsState()
+    val allMcqs by viewModel.allMCQs.collectAsState()
+    val allseqs by viewModel.allSEQs.collectAsState()
+    val customUploadedFiles by viewModel.customUploadedFiles.collectAsState()
+
+    var activeAdminTab by remember { mutableStateOf("directory") } // directory, lectures, styling, ai_automation, publisher, files
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(getLogoBgColor(appPrefs.logoBgColorHex)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AppLogoView(appPrefs = appPrefs, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Admin System: Arfi",
+                            color = WarmWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            fontFamily = FontFamily.Serif
+                        )
+                    }
+                },
+                actions = {
+                    Button(
+                        onClick = { viewModel.performSignOut() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.ExitToApp, null, tint = WarmWhite, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sign Out", color = WarmWhite, fontSize = 12.sp)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeepMaroon
+                )
+            )
+        },
+        bottomBar = {
+            NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
+                NavigationBarItem(
+                    selected = activeAdminTab == "directory",
+                    onClick = { activeAdminTab = "directory" },
+                    label = { Text("Students", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.People, "Students") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = DeepMaroon,
+                        selectedTextColor = DeepMaroon,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = LightCream
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = activeAdminTab == "lectures",
+                    onClick = { activeAdminTab = "lectures" },
+                    label = { Text("Videos", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.VideoCall, "Videos") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = DeepMaroon,
+                        selectedTextColor = DeepMaroon,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = LightCream
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = activeAdminTab == "styling",
+                    onClick = { activeAdminTab = "styling" },
+                    label = { Text("Styling", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.Edit, "Styling") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = DeepMaroon,
+                        selectedTextColor = DeepMaroon,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = LightCream
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = activeAdminTab == "ai_automation",
+                    onClick = { activeAdminTab = "ai_automation" },
+                    label = { Text("Systems AI", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.AutoAwesome, "Systems AI") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = DeepMaroon,
+                        selectedTextColor = DeepMaroon,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = LightCream
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = activeAdminTab == "publisher",
+                    onClick = { activeAdminTab = "publisher" },
+                    label = { Text("Board MCQ", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.CloudUpload, "Publish MCQs") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = DeepMaroon,
+                        selectedTextColor = DeepMaroon,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = LightCream
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = activeAdminTab == "files",
+                    onClick = { activeAdminTab = "files" },
+                    label = { Text("Files & Logo", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.Folder, "Files") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = DeepMaroon,
+                        selectedTextColor = DeepMaroon,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = LightCream
+                    )
+                )
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(LightCream)
+                .padding(16.dp)
+        ) {
+            when (activeAdminTab) {
+                "directory" -> {
+                    Text("Students Profile Directory", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 20.sp, fontFamily = FontFamily.Serif)
+                    Text("Secure clinical audit logs of all active registered Google / Local accounts", fontSize = 12.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (allProfiles.isEmpty()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text("No students registered on the database yet.", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(allProfiles) { student ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(22.dp))
+                                                    .background(getLogoBgColor(appPrefs.logoBgColorHex)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(student.name.take(2).uppercase(), color = WarmWhite, fontWeight = FontWeight.Bold)
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(student.name, fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 15.sp)
+                                                Text("ID / Email: ${student.email}", fontSize = 11.sp, color = Color.Gray)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Divider(thickness = 0.5.dp)
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Column {
+                                                Text("🎓 COLLEGE NAME", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                                                Text(student.collegeName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkMaroon)
+                                            }
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text("📞 PHONE NUMBER", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                                                Text(student.mobileNumber, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.CalendarToday, null, tint = LightMaroon, modifier = Modifier.size(12.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Daily progress: ${(student.dailyProgress * 100).toInt()}%", fontSize = 11.sp, color = Color.Gray)
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(LightCream)
+                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Streak: ${student.studyStreak} days", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "lectures" -> {
+                    Text("Interactive Classroom Manager", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 20.sp, fontFamily = FontFamily.Serif)
+                    Text("Compile and map live video tutorials on standard textbook chapters", fontSize = 11.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text("Compile Video Lecture Form", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    OutlinedTextField(
+                                        value = viewModel.adminVideoTitle,
+                                        onValueChange = { viewModel.adminVideoTitle = it },
+                                        label = { Text("Video Title") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    OutlinedTextField(
+                                        value = viewModel.adminVideoUrl,
+                                        onValueChange = { viewModel.adminVideoUrl = it },
+                                        label = { Text("YouTube Iframe URL") },
+                                        placeholder = { Text("https://www.youtube.com/embed/XXXXX") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    OutlinedTextField(
+                                        value = viewModel.adminVideoDescription,
+                                        onValueChange = { viewModel.adminVideoDescription = it },
+                                        label = { Text("Topic Explanation / Summary Description") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = viewModel.adminVideoDuration,
+                                            onValueChange = { viewModel.adminVideoDuration = it },
+                                            label = { Text("Duration") },
+                                            placeholder = { Text("12 mins") },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminVideoChapter,
+                                            onValueChange = { viewModel.adminVideoChapter = it },
+                                            label = { Text("Chapter") },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text("Reference Curriculum Book Source:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.Gray)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        RadioButton(
+                                            selected = viewModel.adminVideoBook == MedicalDataCatalog.BookSnellAnatomy,
+                                            onClick = { viewModel.adminVideoBook = MedicalDataCatalog.BookSnellAnatomy }
+                                        )
+                                        Text("Snell's Anatomy", fontSize = 11.sp)
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        RadioButton(
+                                            selected = viewModel.adminVideoBook == MedicalDataCatalog.BookRossPhysiology,
+                                            onClick = { viewModel.adminVideoBook = MedicalDataCatalog.BookRossPhysiology }
+                                        )
+                                        Text("Ross Physiology", fontSize = 11.sp)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Button(
+                                        onClick = { viewModel.compileVideoLecture() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                                    ) {
+                                        Text("COMPILE & MAP VIDEO", fontWeight = FontWeight.Bold)
+                                    }
+
+                                    if (viewModel.adminSuccessMessage != null) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(viewModel.adminSuccessMessage!!, color = MedicineGold, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                        TextButton(onClick = { viewModel.adminSuccessMessage = null }) {
+                                            Text("Dismiss Log", fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            Text("Current Compiled Video Lectures (${allLectures.size})", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                        }
+
+                        items(allLectures) { video ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(video.title, fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 13.sp)
+                                            Text("Mapped to: ${video.bookSource} / ${video.chapterName}", fontSize = 10.sp, color = Color.Gray)
+                                        }
+                                        IconButton(onClick = { viewModel.removeVideoLecture(video.id) }) {
+                                            Icon(Icons.Default.Delete, null, tint = CoralRed, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "styling" -> {
+                    Text("Dynamic App Identity Customizer", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 20.sp, fontFamily = FontFamily.Serif)
+                    Text("Deform, morph or customize app naming, logo icons, and primary aesthetics", fontSize = 11.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Realtime Identity Parameters", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = viewModel.adminAppNameInput,
+                                onValueChange = { viewModel.adminAppNameInput = it },
+                                label = { Text("Application Name") },
+                                placeholder = { Text(appPrefs.appName) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = viewModel.adminAppLogoColorInput,
+                                onValueChange = { viewModel.adminAppLogoColorInput = it },
+                                label = { Text("Logo Primary Hex Color Background (e.g. #8E1439)") },
+                                placeholder = { Text(appPrefs.logoBgColorHex) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text("Vector Logo Mark Icon Style:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color.Gray)
+                            val logos = listOf("MedicalServices", "LocalHospital", "Favorite", "Medication", "Healing")
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                logos.forEach { logoName ->
+                                    val isChosen = viewModel.adminAppLogoIconInput == logoName
+                                    Box(
+                                        modifier = Modifier
+                                            .size(50.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isChosen) DeepMaroon else LightCream)
+                                            .clickable { viewModel.adminAppLogoIconInput = logoName },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = getLogoIcon(logoName),
+                                            contentDescription = null,
+                                            tint = if (isChosen) MedicineGold else Color.Gray,
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Button(
+                                onClick = {
+                                    viewModel.updateSystemPreferences(
+                                        appName = viewModel.adminAppNameInput,
+                                        icon = viewModel.adminAppLogoIconInput,
+                                        pColor = viewModel.adminAppLogoColorInput
+                                    )
+                                    viewModel.adminSuccessMessage = "Identity updated! App home screen parameters set."
+                                    // Reset input strings
+                                    viewModel.adminAppNameInput = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                            ) {
+                                Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("SAVE SYSTEM PREFERENCES", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                "ai_automation" -> {
+                    Text("Dr. Arfi Systems AI Console", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 20.sp, fontFamily = FontFamily.Serif)
+                    Text("Type instructions in native natural language to alter system parameters by AI", fontSize = 11.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("System AI Natural Command Prompt", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Example commands: 'Change app name to Anatomy Board Master', 'Add a video video on pacemakers', 'Set theme color to #4A1521'", fontSize = 11.sp, color = Color.Gray)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = viewModel.adminAiQueryText,
+                                onValueChange = { viewModel.adminAiQueryText = it },
+                                label = { Text("What changes do you wish to execute by AI?") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 4
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Button(
+                                onClick = { viewModel.processAdminAiAction() },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                enabled = !viewModel.isAdminAiLoading
+                            ) {
+                                if (viewModel.isAdminAiLoading) {
+                                    CircularProgressIndicator(color = WarmWhite, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Coordinating System Triggers...", fontSize = 12.sp)
+                                } else {
+                                    Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("RUN AI COMPILER", fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (viewModel.adminAiStatusMessage != null) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(LightCream)
+                                        .border(1.dp, MedicineGold, RoundedCornerShape(8.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Column {
+                                        Text("AI COMPILE SYSTEM RESPONSE LOG:", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = MedicineGold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(viewModel.adminAiStatusMessage!!, fontSize = 12.sp, color = DarkMaroon)
+                                        TextButton(onClick = { viewModel.adminAiStatusMessage = null }) {
+                                            Text("Clear Log Output", fontSize = 10.sp, color = Color.Gray)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "publisher" -> {
+                    var publisherSubTab by remember { mutableStateOf("manual") } // manual, ai_import
+
+                    Text("Board Custom MCQ & SEQ Publisher", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 20.sp, fontFamily = FontFamily.Serif)
+                    Text("Publish custom or AI-extracted high-yield board-style MCQs/SEQs to textbooks.", fontSize = 11.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { publisherSubTab = "manual" },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (publisherSubTab == "manual") DeepMaroon else LightCream,
+                                contentColor = if (publisherSubTab == "manual") WarmWhite else Color.Black
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).height(36.dp)
+                        ) {
+                            Text("Manual Creator", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { publisherSubTab = "ai_import" },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (publisherSubTab == "ai_import") DeepMaroon else LightCream,
+                                contentColor = if (publisherSubTab == "ai_import") WarmWhite else Color.Black
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).height(36.dp).testTag("ai_importer_tab")
+                        ) {
+                            Text("AI Bulk Importer", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (publisherSubTab == "manual") {
+                            item {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text("Publish New MCQ", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminQuestion,
+                                            onValueChange = { viewModel.adminQuestion = it },
+                                            label = { Text("MCQ Stem / Question Body") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminOptions[0],
+                                            onValueChange = { viewModel.adminOptions[0] = it },
+                                            label = { Text("Option A") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth().testTag("option_a_input")
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminOptions[1],
+                                            onValueChange = { viewModel.adminOptions[1] = it },
+                                            label = { Text("Option B") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth().testTag("option_b_input")
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminOptions[2],
+                                            onValueChange = { viewModel.adminOptions[2] = it },
+                                            label = { Text("Option C") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminOptions[3],
+                                            onValueChange = { viewModel.adminOptions[3] = it },
+                                            label = { Text("Option D") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Text("Correct Answer Selection:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.Gray)
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            listOf("A", "B", "C", "D").forEach { ans ->
+                                                val isChosen = viewModel.adminCorrectAnswer == ans
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(if (isChosen) DeepMaroon else LightCream)
+                                                        .clickable { viewModel.adminCorrectAnswer = ans }
+                                                        .padding(vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(ans, color = if (isChosen) WarmWhite else Color.Black, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.adminExplanation,
+                                            onValueChange = { viewModel.adminExplanation = it },
+                                            label = { Text("Board Explanation Summary") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedTextField(
+                                                value = viewModel.adminChapterName,
+                                                onValueChange = { viewModel.adminChapterName = it },
+                                                label = { Text("Chapter") },
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f)
+                                            )
+
+                                            OutlinedTextField(
+                                                value = viewModel.adminDifficulty,
+                                                onValueChange = { viewModel.adminDifficulty = it },
+                                                label = { Text("Difficulty") },
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Text("Reference Book Target:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.Gray)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            RadioButton(
+                                                selected = viewModel.adminBookSource == MedicalDataCatalog.BookSnellAnatomy,
+                                                onClick = { viewModel.adminBookSource = MedicalDataCatalog.BookSnellAnatomy }
+                                            )
+                                            Text("Snell's Anatomy", fontSize = 11.sp)
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            RadioButton(
+                                                selected = viewModel.adminBookSource == MedicalDataCatalog.BookRossPhysiology,
+                                                onClick = { viewModel.adminBookSource = MedicalDataCatalog.BookRossPhysiology }
+                                            )
+                                            Text("Ross Physiology", fontSize = 11.sp)
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        Button(
+                                            onClick = { viewModel.createAdminMCQ() },
+                                            colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("publish_mcq_button")
+                                        ) {
+                                            Text("PUBLISH MCQ TO TEXTBOOK", fontWeight = FontWeight.Bold)
+                                        }
+
+                                        if (viewModel.adminSuccessMessage != null) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(viewModel.adminSuccessMessage!!, color = MedicineGold, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            TextButton(onClick = { viewModel.adminSuccessMessage = null }) {
+                                                Text("Dismiss Log", fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            item {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text("Dr. Arfi's Gemini AI Importer", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                                        Text("Bulk extract high-yield questions from pasted pdf/text files or direct webpage/document web links.", fontSize = 10.sp, color = Color.Gray)
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        Text("Extraction Question Type:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.Gray)
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            val isMcq = viewModel.importMode == "MCQ"
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (isMcq) DeepMaroon else LightCream)
+                                                    .clickable { viewModel.importMode = "MCQ" }
+                                                    .padding(vertical = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("Board MCQs", color = if (isMcq) WarmWhite else Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (!isMcq) DeepMaroon else LightCream)
+                                                    .clickable { viewModel.importMode = "SEQ" }
+                                                    .padding(vertical = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("Board SEQs (Essay)", color = if (!isMcq) WarmWhite else Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.importSourceText,
+                                            onValueChange = { viewModel.importSourceText = it },
+                                            label = { Text("Paste Text Content from PDF/File (Multi-line)") },
+                                            placeholder = { Text("E.g. Paste copy-pasted medical textbooks paragraphs, transcript notes or article extracts...") },
+                                            modifier = Modifier.fillMaxWidth().height(120.dp),
+                                            maxLines = 6
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedTextField(
+                                            value = viewModel.importSourceUrl,
+                                            onValueChange = { viewModel.importSourceUrl = it },
+                                            label = { Text("Direct Link / Document Web URL") },
+                                            placeholder = { Text("E.g. Direct Google Drive/Dropbox PDF sharing link, medical exam site...") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth().testTag("ai_import_url_input")
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedTextField(
+                                                value = viewModel.importChapterName,
+                                                onValueChange = { viewModel.importChapterName = it },
+                                                label = { Text("Target Chapter") },
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Text("Reference Book Target:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.Gray)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            RadioButton(
+                                                selected = viewModel.importBookSource == MedicalDataCatalog.BookSnellAnatomy,
+                                                onClick = { viewModel.importBookSource = MedicalDataCatalog.BookSnellAnatomy }
+                                            )
+                                            Text("Snell's Anatomy", fontSize = 11.sp)
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            RadioButton(
+                                                selected = viewModel.importBookSource == MedicalDataCatalog.BookRossPhysiology,
+                                                onClick = { viewModel.importBookSource = MedicalDataCatalog.BookRossPhysiology }
+                                            )
+                                            Text("Ross Physiology", fontSize = 11.sp)
+                                        }
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        if (viewModel.isImportLoading) {
+                                            Box(modifier = Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                                CircularProgressIndicator(color = DeepMaroon)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { viewModel.processAiImport() },
+                                                colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("extract_ai_button")
+                                            ) {
+                                                Text("EXTRACT QUESTIONS VIA GEMINI", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            }
+                                        }
+
+                                        viewModel.importStatusText?.let { status ->
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Text(status, color = MedicineGold, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            TextButton(onClick = { viewModel.importStatusText = null }, contentPadding = PaddingValues(0.dp)) {
+                                                Text("Dismiss Log", fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (viewModel.extractedMCQDrafts.isNotEmpty() || viewModel.extractedSEQDrafts.isNotEmpty()) {
+                            item {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = LightCream),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text("Extracted Questions Review Draft", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                                        Text("The following questions were successfully parsed by Gemini. Confirm details and publish them to textbook chapters.", fontSize = 11.sp, color = Color.DarkGray)
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        if (viewModel.importMode == "MCQ") {
+                                            viewModel.extractedMCQDrafts.forEachIndexed { index, mcq ->
+                                                Card(
+                                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                                                ) {
+                                                    Column(modifier = Modifier.padding(10.dp)) {
+                                                        Text("${index + 1}. MCQ: ${mcq.question}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkMaroon)
+                                                        Text("Options: A) ${mcq.optionA} | B) ${mcq.optionB} | C) ${mcq.optionC} | D) ${mcq.optionD}", fontSize = 10.sp, color = Color.Gray)
+                                                        Text("Correct Answer: ${mcq.correctAnswer}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            viewModel.extractedSEQDrafts.forEachIndexed { index, seq ->
+                                                Card(
+                                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                                                ) {
+                                                    Column(modifier = Modifier.padding(10.dp)) {
+                                                        Text("${index + 1}. SEQ: ${seq.question}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkMaroon)
+                                                        Text("Answer: ${seq.baseAnswer}", fontSize = 11.sp, color = Color.DarkGray)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Button(
+                                            onClick = { viewModel.publishImportedDrafts() },
+                                            colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth().height(44.dp).testTag("publish_all_import_button")
+                                        ) {
+                                            Text("CONFIRM & PUBLISH ALL DRAFTS", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            Text("Active MCQs Direct Inspection (${allMcqs.size})", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                        }
+
+                        items(allMcqs) { mcq ->
+                            val isCustom = mcq.id.startsWith("cus_")
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(mcq.question, fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                            Text("Source: ${mcq.bookSource} | ${mcq.chapterName}", fontSize = 10.sp, color = Color.Gray)
+                                        }
+                                        if (isCustom) {
+                                            IconButton(onClick = { viewModel.removeCustomMCQ(mcq.id) }) {
+                                                Icon(Icons.Default.Delete, null, tint = CoralRed, modifier = Modifier.size(18.dp))
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(LightCream)
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("PRESET", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            Text("Active SEQs Direct Inspection (${allseqs.size})", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                        }
+
+                        items(allseqs) { seq ->
+                            val isCustom = seq.id.startsWith("cus_")
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("QUESTION: ${seq.question}", fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                            Text("Source: ${seq.bookSource} | ${seq.chapterName}", fontSize = 10.sp, color = Color.Gray)
+                                        }
+                                        if (isCustom) {
+                                            IconButton(onClick = { viewModel.removeCustomSEQ(seq.id) }) {
+                                                Icon(Icons.Default.Delete, null, tint = CoralRed, modifier = Modifier.size(18.dp))
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(LightCream)
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("PRESET", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = MedicineGold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "files" -> {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    var uploadFileName by remember { mutableStateOf("") }
+                    var uploadFileType by remember { mutableStateOf("image") } // "image", "pdf", "document"
+
+                    val logoLauncher = rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let {
+                            val clonedPath = copyUriToLocalFile(context, it, "logo")
+                            if (clonedPath != null) {
+                                viewModel.updateLogoImage(clonedPath)
+                            }
+                        }
+                    }
+
+                    val fileLauncher = rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let {
+                            val finalName = if (uploadFileName.isNotBlank()) uploadFileName else "Uploaded File"
+                            val clonedPath = copyUriToLocalFile(context, it, "file")
+                            if (clonedPath != null) {
+                                val file = java.io.File(clonedPath)
+                                val sizeKb = if (file.exists()) "${file.length() / 1024} KB" else "Unknown Size"
+                                viewModel.addUploadedFile(
+                                    fileName = finalName,
+                                    fileUri = clonedPath,
+                                    fileSize = sizeKb,
+                                    fileType = uploadFileType
+                                )
+                                uploadFileName = ""
+                            }
+                        }
+                    }
+
+                    Text("Medical File Storage & App Branding", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 20.sp, fontFamily = FontFamily.Serif)
+                    Text("Upload anatomical illustrations, PDF lesson files, and update app logo branding dynamically.", fontSize = 11.sp, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Section 1: Logo Branding
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text("Logo Upload & Branding from Gallery", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Upload your custom medicine team logo or avatar here. It replaces the default hospital icon across all screens.", fontSize = 11.sp, color = Color.Gray)
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        // Preview
+                                        Box(
+                                            modifier = Modifier
+                                                .size(72.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(getLogoBgColor(appPrefs.logoBgColorHex)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            AppLogoView(appPrefs = appPrefs, modifier = Modifier.size(54.dp))
+                                        }
+
+                                        Column(
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            if (!appPrefs.customLogoUri.isNullOrEmpty()) {
+                                                Text("Custom Image Loaded Successfully", color = MedicineGold, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                                Text("Source: Local Storage Cloned", fontSize = 10.sp, color = Color.Gray)
+                                            } else {
+                                                Text("No Custom Image Loaded (Default Vector)", color = Color.Gray, fontSize = 12.sp)
+                                            }
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Button(
+                                                    onClick = { logoLauncher.launch("image/*") },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    modifier = Modifier.height(32.dp).testTag("select_logo_gallery_btn")
+                                                ) {
+                                                    Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(12.dp), tint = Color.White)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Pick Logo", fontSize = 10.sp, color = Color.White)
+                                                }
+
+                                                if (!appPrefs.customLogoUri.isNullOrEmpty()) {
+                                                    OutlinedButton(
+                                                        onClick = { viewModel.clearLogoImage() },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CoralRed),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Text("Reset", fontSize = 10.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 2: Upload Files
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text("Upload Files / Assets / Study Media", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    OutlinedTextField(
+                                        value = uploadFileName,
+                                        onValueChange = { uploadFileName = it },
+                                        label = { Text("Display Name / Title describing the file") },
+                                        placeholder = { Text("E.g. Heart Anatomy Diagram, Semester Checklist") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("add_file_name_input")
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Text("Select File Category Style:", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.Gray)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        listOf("image" to "Anatomy Image", "pdf" to "PDF Guide", "document" to "Any Document").forEach { (typeKey, typeLabel) ->
+                                            val isSelected = uploadFileType == typeKey
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (isSelected) DeepMaroon else LightCream)
+                                                    .clickable { uploadFileType = typeKey }
+                                                    .padding(vertical = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(typeLabel, color = if (isSelected) WarmWhite else Color.Black, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Button(
+                                        onClick = {
+                                            val filter = when (uploadFileType) {
+                                                "image" -> "image/*"
+                                                "pdf" -> "application/pdf"
+                                                else -> "*/*"
+                                            }
+                                            fileLauncher.launch(filter)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DeepMaroon),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("choose_file_and_upload_btn")
+                                    ) {
+                                        Icon(Icons.Default.CloudUpload, null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("SELECT & UPLOAD FROM GALLERY + COMPUTER", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 3: Gallery of Uploads
+                        item {
+                            Text("Stored Materials & Reference Uploads (${customUploadedFiles.size})", fontWeight = FontWeight.Bold, color = DeepMaroon, fontSize = 14.sp)
+                        }
+
+                        if (customUploadedFiles.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White, RoundedCornerShape(8.dp))
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("No custom learning images or files uploaded yet.", color = Color.Gray, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        items(customUploadedFiles) { ufield ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(42.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(LightCream),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (ufield.fileType == "image") {
+                                                    AsyncImage(
+                                                        model = ufield.fileUri,
+                                                        contentDescription = ufield.fileName,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    val icon = when (ufield.fileType) {
+                                                        "pdf" -> Icons.Default.PictureAsPdf
+                                                        else -> Icons.Default.InsertDriveFile
+                                                    }
+                                                    Icon(icon, null, tint = DeepMaroon, modifier = Modifier.size(20.dp))
+                                                }
+                                            }
+
+                                            Column {
+                                                Text(ufield.fileName, fontWeight = FontWeight.Bold, color = DarkMaroon, fontSize = 13.sp)
+                                                Text("Size: ${ufield.fileSize} | Type: ${ufield.fileType.uppercase()}", fontSize = 10.sp, color = Color.Gray)
+                                            }
+                                        }
+
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (ufield.fileType == "image") {
+                                                IconButton(
+                                                    onClick = { viewModel.updateLogoImage(ufield.fileUri) }
+                                                ) {
+                                                    Icon(Icons.Default.Brush, "Set App Logo", tint = MedicineGold, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+
+                                            IconButton(
+                                                onClick = { viewModel.removeUploadedFile(ufield.id) }
+                                            ) {
+                                                Icon(Icons.Default.Delete, "Delete File", tint = CoralRed, modifier = Modifier.size(18.dp))
+                                            }
+                                        }
+                                    }
+
+                                    // Direct Expanded Display of Custom Diagrams inside storage
+                                    if (ufield.fileType == "image") {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(140.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(LightCream)
+                                        ) {
+                                            AsyncImage(
+                                                model = ufield.fileUri,
+                                                contentDescription = ufield.fileName,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -11,6 +11,8 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -38,9 +40,13 @@ class MedicalRepository(private val context: Context) {
     private val db = AppDatabase.getDatabase(context)
     private val userProfileDao = db.userProfileDao()
     private val customMCQDao = db.customMCQDao()
+    private val customSEQDao = db.customSEQDao()
+    private val customUploadedFileDao = db.customUploadedFileDao()
     private val quizScoreDao = db.quizScoreDao()
     private val noteDao = db.noteDao()
     private val bookmarkedMCQDao = db.bookmarkedMCQDao()
+    private val videoLectureDao = db.videoLectureDao()
+    private val appPreferencesDao = db.appPreferencesDao()
 
     // Moshi & OkHttpClient Init
     private val moshi = Moshi.Builder()
@@ -54,11 +60,16 @@ class MedicalRepository(private val context: Context) {
         .build()
 
     // --- REPLAY/MERGE FLOWS ---
+    val allProfiles: Flow<List<UserProfile>> = userProfileDao.getAllProfilesFlow()
     val userProfile: Flow<UserProfile?> = userProfileDao.getUserProfileFlow()
     val quizScores: Flow<List<QuizScore>> = quizScoreDao.getAllScoresFlow()
     val customMCQs: Flow<List<CustomMCQ>> = customMCQDao.getAllCustomMCQsFlow()
+    val customSEQs: Flow<List<CustomSEQ>> = customSEQDao.getAllCustomSEQsFlow()
+    val customUploadedFiles: Flow<List<CustomUploadedFile>> = customUploadedFileDao.getAllUploadedFilesFlow()
     val savedNotes: Flow<List<Note>> = noteDao.getAllNotesFlow()
     val bookmarks: Flow<List<BookmarkedMCQ>> = bookmarkedMCQDao.getBookmarksFlow()
+    val allVideoLectures: Flow<List<VideoLecture>> = videoLectureDao.getAllVideoLecturesFlow()
+    val appPreferences: Flow<AppPreferences?> = appPreferencesDao.getAppPreferencesFlow()
 
     // Combine predefined and custom questions
     fun observeAllMCQs(): Flow<List<MedicalMCQ>> {
@@ -87,12 +98,85 @@ class MedicalRepository(private val context: Context) {
         }
     }
 
+    // Combine predefined and custom short questions / SEQs
+    fun observeAllSEQs(): Flow<List<ShortQuestion>> {
+        return customSEQs.map { customs ->
+            val predefinedMapped = MedicalDataCatalog.predefinedShortQuestions
+            val customMapped = customs.map { c ->
+                ShortQuestion(
+                    id = "cus_${c.id}",
+                    question = c.question,
+                    baseAnswer = c.baseAnswer,
+                    bookSource = c.bookSource,
+                    chapterName = c.chapterName,
+                    referenceTopic = c.referenceTopic
+                )
+            }
+            predefinedMapped + customMapped
+        }
+    }
+
     // --- DB MUTATIONS ---
     suspend fun ensureProfileExists() = withContext(Dispatchers.IO) {
+        // Core profile
         val existing = userProfileDao.getUserProfile()
         if (existing == null) {
             userProfileDao.insertProfile(UserProfile())
         }
+
+        // Seeding App settings
+        val existingPref = appPreferencesDao.getAppPreferences()
+        if (existingPref == null) {
+            appPreferencesDao.insertAppPreferences(AppPreferences())
+        }
+
+        // Seeding some starter video lectures
+        val existingLectures = videoLectureDao.getAllVideoLecturesFlow().firstOrNull() ?: emptyList()
+        if (existingLectures.isEmpty()) {
+            val lectures = listOf(
+                VideoLecture(
+                    title = "Anatomy: Upper Limb Brachial Plexus",
+                    duration = "14:22 mins",
+                    description = "Full clinical walkthrough of the roots, trunks, divisions, cords, and branches of the brachial plexus. Excellent for clinical diagnostics.",
+                    bookSource = MedicalDataCatalog.BookSnellAnatomy,
+                    chapterName = "Upper Limb",
+                    videoUrl = "https://www.youtube.com/embed/g-Vb6L02G90"
+                ),
+                VideoLecture(
+                    title = "Physiology: Action Potential of the Pacemaker Myocardium",
+                    duration = "10:45 mins",
+                    description = "Comprehensive ionic overview of cardiac action potentials of Sinoatrial nodes. Explaining hyperpolarization and calcium currents.",
+                    bookSource = MedicalDataCatalog.BookRossPhysiology,
+                    chapterName = "Cardiovascular System",
+                    videoUrl = "https://www.youtube.com/embed/v7Q9v7_762"
+                ),
+                VideoLecture(
+                    title = "Anatomy: Cranial Nerves Clinical Pathways & Foramina",
+                    duration = "18:15 mins",
+                    description = "An interactive review of core cranial nerve roots, anatomical exit skull foramina, and relevant clinical pathologies (Snell Chapter 12).",
+                    bookSource = MedicalDataCatalog.BookSnellAnatomy,
+                    chapterName = "Clinical Anatomy",
+                    videoUrl = "https://www.youtube.com/embed/Z0Xn3V_C_F0"
+                ),
+                VideoLecture(
+                    title = "Physiology: Nephron Countercurrent Multiplier Mechanics",
+                    duration = "15:30 mins",
+                    description = "Detailed ionic walkthrough of nephron clearance, loop of Henle concentration, and proximal convoluted tubule absorption.",
+                    bookSource = MedicalDataCatalog.BookRossPhysiology,
+                    chapterName = "Urinary System",
+                    videoUrl = "https://www.youtube.com/embed/v7Q9v7_763"
+                )
+            )
+            lectures.forEach { videoLectureDao.insertVideoLecture(it) }
+        }
+    }
+
+    suspend fun getProfileByEmail(email: String): UserProfile? = withContext(Dispatchers.IO) {
+        userProfileDao.getProfileByEmail(email)
+    }
+
+    suspend fun getAllProfiles(): List<UserProfile> = withContext(Dispatchers.IO) {
+        userProfileDao.getAllProfiles()
     }
 
     suspend fun updateProfile(profile: UserProfile) = withContext(Dispatchers.IO) {
@@ -107,11 +191,53 @@ class MedicalRepository(private val context: Context) {
         customMCQDao.deleteCustomMCQ(id)
     }
 
-    suspend fun saveQuizScore(score: QuizScore) = withContext(Dispatchers.IO) {
+    suspend fun deleteCustomMCQByIdString(mcqIdString: String) = withContext(Dispatchers.IO) {
+        if (mcqIdString.startsWith("cus_")) {
+            val numericId = mcqIdString.substringAfter("cus_").toLongOrNull() ?: 0L
+            customMCQDao.deleteCustomMCQ(numericId)
+        }
+    }
+
+    suspend fun addCustomSEQ(seq: CustomSEQ) = withContext(Dispatchers.IO) {
+        customSEQDao.insertCustomSEQ(seq)
+    }
+
+    suspend fun deleteCustomSEQ(id: Long) = withContext(Dispatchers.IO) {
+        customSEQDao.deleteCustomSEQ(id)
+    }
+
+    suspend fun deleteCustomSEQByIdString(seqIdString: String) = withContext(Dispatchers.IO) {
+        if (seqIdString.startsWith("cus_")) {
+            val numericId = seqIdString.substringAfter("cus_").toLongOrNull() ?: 0L
+            customSEQDao.deleteCustomSEQ(numericId)
+        }
+    }
+
+    suspend fun updateAppPreferences(prefs: AppPreferences) = withContext(Dispatchers.IO) {
+        appPreferencesDao.insertAppPreferences(prefs)
+    }
+
+    suspend fun addCustomUploadedFile(file: CustomUploadedFile) = withContext(Dispatchers.IO) {
+        customUploadedFileDao.insertUploadedFile(file)
+    }
+
+    suspend fun deleteCustomUploadedFile(id: Long) = withContext(Dispatchers.IO) {
+        customUploadedFileDao.deleteUploadedFile(id)
+    }
+
+    suspend fun addVideoLecture(lecture: VideoLecture) = withContext(Dispatchers.IO) {
+        videoLectureDao.insertVideoLecture(lecture)
+    }
+
+    suspend fun deleteVideoLecture(id: Long) = withContext(Dispatchers.IO) {
+        videoLectureDao.deleteVideoLecture(id)
+    }
+
+    suspend fun saveQuizScore(score: QuizScore, userEmail: String) = withContext(Dispatchers.IO) {
         quizScoreDao.insertScore(score)
         
         // Boost streak / update dailyProgress of the user profile
-        val profile = userProfileDao.getUserProfile() ?: UserProfile()
+        val profile = userProfileDao.getProfileByEmail(userEmail) ?: UserProfile(id = userEmail, email = userEmail)
         val nextProgress = (profile.dailyProgress + 0.15f).coerceAtMost(1.0f)
         val now = System.currentTimeMillis()
         val streak = if (now - profile.lastActiveTime > 20 * 3600 * 1000 && now - profile.lastActiveTime < 48 * 3600 * 1000) {
@@ -199,7 +325,7 @@ class MedicalRepository(private val context: Context) {
     }
 
     // --- AI SMART SEARCH MATCHING ---
-    suspend fun performSmartSearch(query: String, allMcqs: List<MedicalMCQ>): SearchResults = withContext(Dispatchers.IO) {
+    suspend fun performSmartSearch(query: String, allMcqs: List<MedicalMCQ>, allShortQs: List<ShortQuestion>): SearchResults = withContext(Dispatchers.IO) {
         if (query.trim().isEmpty()) {
             return@withContext SearchResults(emptyList(), emptyList(), "Please enter a valid term above.")
         }
@@ -218,7 +344,7 @@ class MedicalRepository(private val context: Context) {
         }
 
         // 2. Filter local short questions
-        val matchedShortQs = MedicalDataCatalog.predefinedShortQuestions.filter { sq ->
+        val matchedShortQs = allShortQs.filter { sq ->
             sq.question.lowercase().contains(q) ||
             sq.baseAnswer.lowercase().contains(q) ||
             sq.referenceTopic.lowercase().contains(q) ||

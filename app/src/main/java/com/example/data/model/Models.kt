@@ -9,12 +9,45 @@ data class UserProfile(
     @PrimaryKey val id: String = "primary_user",
     val name: String = "Dr. Student",
     val email: String = "student@medzwitharfi.edu",
+    val collegeName: String = "Punjab Medical College",
+    val mobileNumber: String = "+92-300-1234567",
     val studyStreak: Int = 3,
     val dailyProgress: Float = 0.65f,
     val weakTopics: String = "Embryology, Endocrine System, Pelvis",
     val completedChapters: Int = 12,
     val lastActiveTime: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "video_lectures")
+data class VideoLecture(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val duration: String,
+    val description: String,
+    val bookSource: String, // "Snell's Clinical Anatomy" or "Ross and Wilson Anatomy & Physiology"
+    val chapterName: String,
+    val videoUrl: String, // dynamic mock or real url
+    val isCustom: Boolean = false
+) : Serializable
+
+@Entity(tableName = "app_preferences")
+data class AppPreferences(
+    @PrimaryKey val id: String = "singleton_pref",
+    val appName: String = "Medz with Arfi",
+    val logoIconName: String = "MedicalServices", // MedicalServices, LocalHospital, Favorite, Medication, Healing
+    val logoBgColorHex: String = "#8E1439", // Hex code
+    val customLogoUri: String? = null
+) : Serializable
+
+@Entity(tableName = "custom_uploaded_files")
+data class CustomUploadedFile(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fileName: String,
+    val fileUri: String, // local filesystem path / persistent identifier
+    val fileSize: String,
+    val fileType: String, // "image", "pdf", "docx", "other"
+    val uploadedAt: Long = System.currentTimeMillis()
+) : Serializable
 
 @Entity(tableName = "custom_mcqs")
 data class CustomMCQ(
@@ -31,6 +64,17 @@ data class CustomMCQ(
     val isCustom: Boolean = true,
     val bookSource: String, // "Snell's Clinical Anatomy" or "Ross and Wilson Anatomy & Physiology"
     val chapterName: String
+)
+
+@Entity(tableName = "custom_seqs")
+data class CustomSEQ(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val question: String,
+    val baseAnswer: String,
+    val bookSource: String, // "Snell's Clinical Anatomy" or "Ross and Wilson Anatomy & Physiology"
+    val chapterName: String,
+    val referenceTopic: String,
+    val isCustom: Boolean = true
 )
 
 @Entity(tableName = "quiz_scores")
