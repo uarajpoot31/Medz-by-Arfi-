@@ -42,7 +42,7 @@ private val LightColorScheme =
 
 @Composable
 fun MyApplicationTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
+  darkTheme: Boolean = false,
   // Disabling dynamicColor by default to preserve the brand-specific Maroon and Gold aesthetic
   dynamicColor: Boolean = false,
   content: @Composable () -> Unit,

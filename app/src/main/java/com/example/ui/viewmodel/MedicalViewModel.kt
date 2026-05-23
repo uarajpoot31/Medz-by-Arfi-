@@ -110,7 +110,7 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     var editingNoteId by mutableStateOf<Long?>(null)
     var noteTitle by mutableStateOf("")
     var noteContent by mutableStateOf("")
-    var noteBookSource by mutableStateOf("Snell's Clinical Anatomy")
+    var noteBookSource by mutableStateOf("Anatomy")
     var noteChapterName by mutableStateOf("Upper Limb")
 
     // Admin Creation Portal
@@ -119,7 +119,7 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     var adminCorrectAnswer by mutableStateOf("A") // A, B, C, D
     var adminExplanation by mutableStateOf("")
     var adminDifficulty by mutableStateOf("Medium") // Easy, Medium, Hard
-    var adminBookSource by mutableStateOf("Snell's Clinical Anatomy")
+    var adminBookSource by mutableStateOf("Anatomy")
     var adminChapterName by mutableStateOf("Upper Limb")
     var adminSuccessMessage by mutableStateOf<String?>(null)
 
@@ -128,7 +128,7 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     var adminVideoDuration by mutableStateOf("")
     var adminVideoDescription by mutableStateOf("")
     var adminVideoUrl by mutableStateOf("")
-    var adminVideoBook by mutableStateOf("Snell's Clinical Anatomy")
+    var adminVideoBook by mutableStateOf("Anatomy")
     var adminVideoChapter by mutableStateOf("Upper Limb")
 
     // Admin App Settings Inputs
@@ -454,7 +454,7 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
     var importSourceText by mutableStateOf("")
     var importSourceUrl by mutableStateOf("")
     var importMode by mutableStateOf("MCQ") // "MCQ" or "SEQ"
-    var importBookSource by mutableStateOf("Snell's Clinical Anatomy")
+    var importBookSource by mutableStateOf("Anatomy")
     var importChapterName by mutableStateOf("Upper Limb")
     var isImportLoading by mutableStateOf(false)
     var importStatusText by mutableStateOf<String?>(null)
@@ -843,7 +843,7 @@ class MedicalViewModel(application: Application) : AndroidViewModel(application)
         editingNoteId = null
         noteTitle = ""
         noteContent = ""
-        noteBookSource = "Snell's Clinical Anatomy"
+        noteBookSource = "Anatomy"
         noteChapterName = "Upper Limb"
     }
 

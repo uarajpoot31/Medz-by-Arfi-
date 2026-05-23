@@ -2,8 +2,8 @@ package com.example.data.model
 
 object MedicalDataCatalog {
 
-    val BookSnellAnatomy = "Snell's Clinical Anatomy"
-    val BookRossPhysiology = "Ross and Wilson Anatomy & Physiology"
+    val BookSnellAnatomy = "Anatomy"
+    val BookRossPhysiology = "Physiology"
 
     val SnellChapters = listOf(
         "Upper Limb", "Lower Limb", "Thorax", "Abdomen", "Pelvis", 

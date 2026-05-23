@@ -493,6 +493,26 @@ fun MedicalAppUI(viewModel: MedicalViewModel) {
 
 // ==================== AUTH GATEWAY ====================
 @Composable
+fun lightCardTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = Color(0xFF1C1313),
+    unfocusedTextColor = Color(0xFF1C1313),
+    disabledTextColor = Color.Gray,
+    errorTextColor = CoralRed,
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent,
+    focusedLabelColor = DeepMaroon,
+    unfocusedLabelColor = Color.Gray,
+    focusedBorderColor = DeepMaroon,
+    unfocusedBorderColor = Color.LightGray,
+    focusedLeadingIconColor = DeepMaroon,
+    unfocusedLeadingIconColor = Color.Gray,
+    focusedTrailingIconColor = DeepMaroon,
+    unfocusedTrailingIconColor = Color.Gray,
+    focusedPlaceholderColor = Color.Gray,
+    unfocusedPlaceholderColor = Color.Gray
+)
+
+@Composable
 fun AuthScreen(viewModel: MedicalViewModel) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -602,7 +622,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = DeepMaroon) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("auth_name_input"),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -613,7 +633,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             leadingIcon = { Icon(Icons.Default.Book, contentDescription = null, tint = DeepMaroon) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("auth_college_input"),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -624,7 +644,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = DeepMaroon) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("auth_mobile_input"),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
@@ -636,7 +656,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = DeepMaroon) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("auth_email_input"),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                        colors = lightCardTextFieldColors()
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -649,7 +669,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("auth_password_input"),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                        colors = lightCardTextFieldColors()
                     )
 
                     if (error != null) {
@@ -806,7 +826,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             placeholder = { Text("username@gmail.com") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(
@@ -878,7 +898,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             label = { Text("Your Name") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -888,7 +908,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             label = { Text("College / University Name") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -898,7 +918,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             label = { Text("Mobile Number") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
 
                         if (gError != null) {
@@ -965,7 +985,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             label = { Text("Your Registered Gmail Address") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
 
                         if (forgotMessage != null) {
@@ -1073,7 +1093,7 @@ fun AuthScreen(viewModel: MedicalViewModel) {
                             label = { Text("Verification OTP (6 Digits)") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = DeepMaroon)
+                            colors = lightCardTextFieldColors()
                         )
 
                         Text("Test OTP Hint Code: 123456", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
@@ -3452,10 +3472,7 @@ fun QuizTab(viewModel: MedicalViewModel) {
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             singleLine = true,
                             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = DeepMaroon,
-                                unfocusedBorderColor = Color.LightGray
-                            )
+                            colors = lightCardTextFieldColors()
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
@@ -5226,7 +5243,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                         onValueChange = { viewModel.adminVideoTitle = it },
                                         label = { Text("Video Title") },
                                         singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = lightCardTextFieldColors()
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -5236,7 +5254,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                         label = { Text("YouTube Iframe URL") },
                                         placeholder = { Text("https://www.youtube.com/embed/XXXXX") },
                                         singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = lightCardTextFieldColors()
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -5244,7 +5263,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                         value = viewModel.adminVideoDescription,
                                         onValueChange = { viewModel.adminVideoDescription = it },
                                         label = { Text("Topic Explanation / Summary Description") },
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = lightCardTextFieldColors()
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -5255,7 +5275,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             label = { Text("Duration") },
                                             placeholder = { Text("12 mins") },
                                             singleLine = true,
-                                            modifier = Modifier.weight(1f)
+                                            modifier = Modifier.weight(1f),
+                                            colors = lightCardTextFieldColors()
                                         )
 
                                         OutlinedTextField(
@@ -5263,7 +5284,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             onValueChange = { viewModel.adminVideoChapter = it },
                                             label = { Text("Chapter") },
                                             singleLine = true,
-                                            modifier = Modifier.weight(1f)
+                                            modifier = Modifier.weight(1f),
+                                            colors = lightCardTextFieldColors()
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -5349,7 +5371,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                 label = { Text("Application Name") },
                                 placeholder = { Text(appPrefs.appName) },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = lightCardTextFieldColors()
                             )
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -5359,7 +5382,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                 label = { Text("Logo Primary Hex Color Background (e.g. #8E1439)") },
                                 placeholder = { Text(appPrefs.logoBgColorHex) },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = lightCardTextFieldColors()
                             )
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -5434,7 +5458,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                 onValueChange = { viewModel.adminAiQueryText = it },
                                 label = { Text("What changes do you wish to execute by AI?") },
                                 modifier = Modifier.fillMaxWidth(),
-                                maxLines = 4
+                                maxLines = 4,
+                                colors = lightCardTextFieldColors()
                             )
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -5511,7 +5536,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                 label = { Text("Enter Gemini API Key (AIzaSy...)") },
                                 placeholder = { Text("Paste your Gemini API key from Google AI Studio") },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = lightCardTextFieldColors()
                             )
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -5582,7 +5608,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             value = viewModel.adminQuestion,
                                             onValueChange = { viewModel.adminQuestion = it },
                                             label = { Text("MCQ Stem / Question Body") },
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -5591,7 +5618,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             onValueChange = { viewModel.adminOptions[0] = it },
                                             label = { Text("Option A") },
                                             singleLine = true,
-                                            modifier = Modifier.fillMaxWidth().testTag("option_a_input")
+                                            modifier = Modifier.fillMaxWidth().testTag("option_a_input"),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -5600,7 +5628,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             onValueChange = { viewModel.adminOptions[1] = it },
                                             label = { Text("Option B") },
                                             singleLine = true,
-                                            modifier = Modifier.fillMaxWidth().testTag("option_b_input")
+                                            modifier = Modifier.fillMaxWidth().testTag("option_b_input"),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -5609,7 +5638,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             onValueChange = { viewModel.adminOptions[2] = it },
                                             label = { Text("Option C") },
                                             singleLine = true,
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -5618,7 +5648,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             onValueChange = { viewModel.adminOptions[3] = it },
                                             label = { Text("Option D") },
                                             singleLine = true,
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -5645,7 +5676,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             value = viewModel.adminExplanation,
                                             onValueChange = { viewModel.adminExplanation = it },
                                             label = { Text("Board Explanation Summary") },
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -5655,7 +5687,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                                 onValueChange = { viewModel.adminChapterName = it },
                                                 label = { Text("Chapter") },
                                                 singleLine = true,
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier.weight(1f),
+                                                colors = lightCardTextFieldColors()
                                             )
 
                                             OutlinedTextField(
@@ -5663,7 +5696,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                                 onValueChange = { viewModel.adminDifficulty = it },
                                                 label = { Text("Difficulty") },
                                                 singleLine = true,
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier.weight(1f),
+                                                colors = lightCardTextFieldColors()
                                             )
                                         }
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -5749,6 +5783,7 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             label = { Text("Paste Text Content from PDF/File (Multi-line)") },
                                             placeholder = { Text("E.g. Paste copy-pasted medical textbooks paragraphs, transcript notes or article extracts...") },
                                             modifier = Modifier.fillMaxWidth().height(120.dp),
+                                            colors = lightCardTextFieldColors(),
                                             maxLines = 6
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -5759,7 +5794,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                             label = { Text("Direct Link / Document Web URL") },
                                             placeholder = { Text("E.g. Direct Google Drive/Dropbox PDF sharing link, medical exam site...") },
                                             singleLine = true,
-                                            modifier = Modifier.fillMaxWidth().testTag("ai_import_url_input")
+                                            modifier = Modifier.fillMaxWidth().testTag("ai_import_url_input"),
+                                            colors = lightCardTextFieldColors()
                                         )
                                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -5769,7 +5805,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                                 onValueChange = { viewModel.importChapterName = it },
                                                 label = { Text("Target Chapter") },
                                                 singleLine = true,
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier.weight(1f),
+                                                colors = lightCardTextFieldColors()
                                             )
                                         }
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -6073,7 +6110,8 @@ fun AdminSystemScreen(viewModel: MedicalViewModel) {
                                         label = { Text("Display Name / Title describing the file") },
                                         placeholder = { Text("E.g. Heart Anatomy Diagram, Semester Checklist") },
                                         singleLine = true,
-                                        modifier = Modifier.fillMaxWidth().testTag("add_file_name_input")
+                                        modifier = Modifier.fillMaxWidth().testTag("add_file_name_input"),
+                                        colors = lightCardTextFieldColors()
                                     )
                                     Spacer(modifier = Modifier.height(10.dp))
 
